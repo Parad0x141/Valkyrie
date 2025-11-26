@@ -39,7 +39,8 @@ The author **assumes no liability** for misuse.
 - Windows 10/11 x64  
 - Administrator privileges  
 - Visual Studio 2022 (C++20)  
-- Windows 10/11 SDK  
+- Windows 10/11 SDK
+- Vulnerable Driver Blocklist disabled (Will be auto-disabled by Valkyrie in the next update)
 - `ntdll.lib`, `dbghelp.lib`
 
 ---
@@ -51,3 +52,49 @@ cd Valkyrie
 mkdir build && cd build
 cmake ..
 cmake --build . --config Release
+```
+
+## 🧪 Usage  
+For now, the driver path is hardcoded for this early release, so drop the driver you want to map here:  
+`C:\HelloWorld.sys`  
+
+A simple Hello World driver is provided in the repo for you convenience.
+
+Run `Valkyrie.exe` **as Administrator**.
+
+---
+
+## 📁 Project Layout  
+| File | Purpose |
+|---|---|
+| `IntelLoader.cpp` | Load vulnerable Intel driver |
+| `ValkyrieMapper.cpp` | Core mapping engine |
+| `StealthKit.cpp` | Anti-forensics & trace removal |
+| `PEUtils.cpp` | PE parsing & validation |
+| `PDBParser.cpp` | Symbol resolution via PDB |
+| `X64Assembler.hpp` | Runtime x64 shellcode generator |
+| `Main.cpp` | Entry point |
+
+## 🧠 Credits  
+- **Cyril “Parad0x141” Bouvier** 
+- **TheCruZ** – original idea ([KDMapper](https://github.com/TheCruZ/kdmapper))
+
+---
+
+## 📄 License  
+[MIT](LICENSE) – free for lawful use.
+
+---
+
+## 🤝 Contributing  
+Issues & PRs welcome.  
+Please follow the [code of conduct](CODE_OF_CONDUCT.md).
+
+---
+
+## 📬 Contact  
+GitHub: [@Parad0x141](https://github.com/Parad0x141)
+
+---
+
+⭐ **Star the repo if you like it!**
