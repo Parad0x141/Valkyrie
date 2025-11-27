@@ -36,7 +36,7 @@ vec_relocs ValkyrieMapper::GetRelocs(void* image_base) {
 	vec_relocs relocs;
 	DWORD reloc_va = nt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
 
-	if (!reloc_va) //Fix from @greetmark of UnknownCheats Forum
+	if (!reloc_va)
 		return {};
 
 	auto current_base_relocation = reinterpret_cast<PIMAGE_BASE_RELOCATION>(reinterpret_cast<ULONG64>(image_base) + reloc_va);
@@ -68,7 +68,6 @@ vec_imports ValkyrieMapper::GetImports(void* image_base)
 
 	DWORD import_va = nt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
 
-	//not imports necesary
 	if (!import_va)
 		return {};
 

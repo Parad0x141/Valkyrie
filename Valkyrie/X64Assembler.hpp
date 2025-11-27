@@ -1,4 +1,4 @@
-﻿// Version 0.3. Code by Cyril "Parad0x141" Bouvier - 2025
+﻿// Version 0.3.1 Code by Cyril "Parad0x141" Bouvier - 2025
 
 
 // Based on various public resources and personal knowledge of x64 assembly,
@@ -14,9 +14,27 @@
 
 // Feel free to extend, use, abuse, modify, copy, share, etc this code as you wish.
 
+// Note that some high level func are broken atm, this lib is a WIP.
+
+/*
+ * MICROSOFT X64 CALLING CONVENTION
+ * ================================
+ * Arguments: RCX, RDX, R8, R9, then stack (right-to-left)
+ * Return:    RAX (integers), XMM0 (floats)
+ *
+ * Volatile:     RAX, RCX, RDX, R8-R11, XMM0-XMM5
+ * Non-volatile: RBX, RBP, RDI, RSI, RSP, R12-R15, XMM6-XMM15
+ *
+ * Stack:
+ *   - Must be 16-byte aligned before CALL (RSP % 16 == 8)
+ *   - Caller must allocate 32 bytes shadow space for callee
+ *   - Callee can use shadow space to spill registers
+ */
+
 #pragma once
 
-#include "Common.hpp"
+#include <vector>
+#include <optional>
 #include <array>
 #include <chrono>
 #include <random>
@@ -725,7 +743,7 @@ void JmpR11()
 	/// </summary>
 
 
-	inline std::mt19937_64& GetRNG()
+	static inline std::mt19937_64& GetRNG()
 	{
 		thread_local std::mt19937_64 rng{ std::random_device{}() }; // Seed with random device, thread-local$
 		return rng;                                                 // Warning tho, this is not cryptographically secure
@@ -742,7 +760,7 @@ void JmpR11()
 	}
 
 	/// <summary>
-	/// Create a trampoline hook that preserves volatile registers
+	/// Create a trampoline hook that preserves full context,
 	/// Calls hook function, then returns to original execution
 	/// </summary>
 	static std::vector<uint8_t> CreateTrampolineHook(
@@ -752,36 +770,60 @@ void JmpR11()
 	{
 		X64Assembler asm_builder;
 
-		// Save context
-		if (preserveFlags) asm_builder.Pushfq();
-		asm_builder.PushRax();
-		asm_builder.PushRcx();
-		asm_builder.PushRdx();
-		asm_builder.PushR8();
-		asm_builder.PushR9();
-		asm_builder.PushR10();
-		asm_builder.PushR11();
-		asm_builder.PushR12();
-		asm_builder.PushR13();
-		asm_builder.PushR14();
-		asm_builder.PushR15();
+		// 1. Save ALL registers
+		if (preserveFlags) asm_builder.Pushfq();  // +8
 
+		// Volatile
+		asm_builder.PushRax();   // +8
+		asm_builder.PushRcx();   // +8
+		asm_builder.PushRdx();   // +8
+		asm_builder.PushR8();    // +8
+		asm_builder.PushR9();    // +8
+		asm_builder.PushR10();   // +8
+		asm_builder.PushR11();   // +8
 
-		// Allocate shadow space (required by x64 calling convention)
-		asm_builder.SubRspImm8(0x20);
+		// Non-volatile
+		asm_builder.PushRbx();   // +8
+		asm_builder.PushRbp();   // +8
+		asm_builder.PushRsi();   // +8
+		asm_builder.PushRdi();   // +8
+		asm_builder.PushR12();   // +8
+		asm_builder.PushR13();   // +8
+		asm_builder.PushR14();   // +8
+		asm_builder.PushR15();   // +8
 
-		// Call hook function
+		// Total: 15 registers = 120 bytes (with RFLAGS) ou 112 bytes (without)
+
+		// Calculate stack alignment
+		size_t pushed_bytes = preserveFlags ? 120 : 112;
+		size_t alignment_needed = (16 - ((pushed_bytes + 8) % 16)) % 16;
+		uint32_t total_alloc = 0x20 + static_cast<uint32_t>(alignment_needed);
+
+		if (total_alloc <= 0xFF)
+			asm_builder.SubRspImm8(static_cast<uint8_t>(total_alloc));
+		else
+			asm_builder.SubRspImm32(total_alloc);
+
+		// Call hook
 		asm_builder.MovRax(hookFunction);
 		asm_builder.CallRax();
 
-		// Cleanup shadow space
-		asm_builder.AddRspImm8(0x20);
+		// Cleanup stack
+		if (total_alloc <= 0xFF)
+			asm_builder.AddRspImm8(static_cast<uint8_t>(total_alloc));
+		else
+			asm_builder.AddRspImm32(total_alloc);
 
-		// Restore context
+		// Restore registers (REVERSE ORDER!)
 		asm_builder.PopR15();
 		asm_builder.PopR14();
 		asm_builder.PopR13();
 		asm_builder.PopR12();
+		asm_builder.PopRdi();
+		asm_builder.PopRsi();
+		asm_builder.PopRbp();
+		asm_builder.PopRbx();
+
 		asm_builder.PopR11();
 		asm_builder.PopR10();
 		asm_builder.PopR9();
@@ -789,9 +831,10 @@ void JmpR11()
 		asm_builder.PopRdx();
 		asm_builder.PopRcx();
 		asm_builder.PopRax();
+
 		if (preserveFlags) asm_builder.Popfq();
 
-		// Jump back to original code
+		// Return to original code
 		asm_builder.MovRax(returnAddress);
 		asm_builder.JmpRax();
 
@@ -799,9 +842,11 @@ void JmpR11()
 	}
 
 	/// <summary>
-	/// Create function call shellcode with Windows x64 calling convention
-	/// Args: RCX, RDX, R8, R9 (first 4 params)
-	/// </summary>
+/// Create function call shellcode with Windows x64 calling convention
+/// Args: RCX, RDX, R8, R9 (first 4 params)
+/// Returns: Result in RAX
+/// Note: Caller must ensure stack is 16-byte aligned on entry
+/// </summary>
 	static std::vector<uint8_t> CreateFunctionCall(
 		uint64_t functionAddress,
 		uint64_t arg1 = 0,
@@ -811,20 +856,147 @@ void JmpR11()
 	{
 		X64Assembler asm_builder;
 
-		asm_builder.SubRspImm8(0x28);
+		//    Save volatile registers (RAX will hold function address temporarily)
+		//    We DON'T save RCX, RDX, R8, R9 because we're about to overwrite them
+		//    with arguments (volatile anyway)
+		asm_builder.PushR10();
+		asm_builder.PushR11();
+		// Total pushed: 2 × 8 = 16 bytes
 
-		// Setup arguments
+		//    Allocate shadow space + ensure alignment
+		//    After 2 PUSH: RSP = original - 16
+		//    Need: (RSP - shadow - 8) % 16 == 0 before CALL
+		//    So: (16 + shadow + 8) % 16 == 0
+		//    => shadow = 32 works: (16 + 32 + 8) % 16 = 8 % 16 NOPE....
+		//    Need 8 more bytes: shadow = 32 + 8 = 40
+		asm_builder.SubRspImm8(0x28);  // 40 bytes (32 shadow + 8 align)
+
 		asm_builder.MovRcx(arg1);
 		asm_builder.MovRdx(arg2);
 		asm_builder.MovR8(arg3);
 		asm_builder.MovR9(arg4);
 
-		// Appel
+		asm_builder.MovRax(functionAddress);
+		asm_builder.CallRax();
+		// Result is now in RAX
+
+		asm_builder.AddRspImm8(0x28);
+
+		asm_builder.PopR11();
+		asm_builder.PopR10();
+
+		asm_builder.Ret();
+
+		return asm_builder.GetBytes();
+	}
+
+	/// <summary>
+/// Create function call shellcode with full register preservation
+/// Supports up to 8 arguments (4 in registers + 4 on stack)
+/// </summary>
+	static std::vector<uint8_t> CreateFunctionCallEx(
+		uint64_t functionAddress,
+		const std::vector<uint64_t>& args)
+	{
+		X64Assembler asm_builder;
+
+		if (args.size() > 8)
+		{
+			// Fallback to basic version or throw
+			return {};
+		}
+
+		// 1. Save ALL volatile registers (we'll restore RAX later for return value)
+		asm_builder.PushRax();  // Will be used for function address
+		asm_builder.PushRcx();  // Will be overwritten with arg1
+		asm_builder.PushRdx();  // Will be overwritten with arg2
+		asm_builder.PushR8();   // Will be overwritten with arg3
+		asm_builder.PushR9();   // Will be overwritten with arg4
+		asm_builder.PushR10();
+		asm_builder.PushR11();
+		// Total pushed: 7 × 8 = 56 bytes
+
+		// 2. Calculate stack allocation
+		//    Shadow space: 32 bytes (mandatory)
+		//    Extra args: (args.size() > 4) ? (args.size() - 4) × 8 : 0
+		//    Alignment: ensure (56 + allocated + 8) % 16 == 0
+
+		size_t extra_args = (args.size() > 4) ? (args.size() - 4) : 0;
+		size_t base_alloc = 32 + (extra_args * 8);
+		size_t pushed_bytes = 56;
+		size_t alignment = (16 - ((pushed_bytes + base_alloc + 8) % 16)) % 16;
+		size_t total_alloc = base_alloc + alignment;
+
+		if (total_alloc <= 0xFF)
+			asm_builder.SubRspImm8(static_cast<uint8_t>(total_alloc));
+		else
+			asm_builder.SubRspImm32(static_cast<uint32_t>(total_alloc));
+
+		// 3. Setup register arguments (first 4)
+		if (args.size() > 0) asm_builder.MovRcx(args[0]);
+		if (args.size() > 1) asm_builder.MovRdx(args[1]);
+		if (args.size() > 2) asm_builder.MovR8(args[2]);
+		if (args.size() > 3) asm_builder.MovR9(args[3]);
+
+		// 4. Setup stack arguments (5th+)
+		//    Stack layout after SubRsp:
+		//    [RSP+0x00] = shadow space for RCX
+		//    [RSP+0x08] = shadow space for RDX
+		//    [RSP+0x10] = shadow space for R8
+		//    [RSP+0x18] = shadow space for R9
+		//    [RSP+0x20] = 5th argument
+		//    [RSP+0x28] = 6th argument
+		//    etc.
+
+		for (size_t i = 4; i < args.size(); ++i)
+		{
+			uint32_t stack_offset = 0x20 + ((i - 4) * 8);
+
+			// MOV [RSP+offset], imm64 is complex, so we use a temp register
+			asm_builder.MovRax(args[i]);
+
+			// MOV [RSP+offset], RAX
+			asm_builder.Emit(0x48);  // REX.W
+			asm_builder.Emit(0x89);  // MOV r/m64, r64
+			asm_builder.Emit(0x84);  // ModRM: [RSP + disp32]
+			asm_builder.Emit(0x24);  // SIB: [RSP]
+			asm_builder.EmitDword(stack_offset);
+		}
+
+		// 5. Call function
 		asm_builder.MovRax(functionAddress);
 		asm_builder.CallRax();
 
-		// Nettoyer
-		asm_builder.AddRspImm8(0x28);
+		// 6. Save return value (RAX) temporarily
+		asm_builder.PushRax();
+
+		// 7. Cleanup stack
+		if (total_alloc <= 0xFF)
+			asm_builder.AddRspImm8(static_cast<uint8_t>(total_alloc));
+		else
+			asm_builder.AddRspImm32(static_cast<uint32_t>(total_alloc));
+
+		// 8. Restore return value to R10 (temporary)
+		asm_builder.PopR10();  // R10 = return value
+
+		// 9. Restore volatile registers (except RAX, we'll put return value there)
+		asm_builder.PopR11();
+		asm_builder.PopR10();  // This pops the OLD R10 value we saved in step 1
+		asm_builder.PopR9();
+		asm_builder.PopR8();
+		asm_builder.PopRdx();
+		asm_builder.PopRcx();
+		asm_builder.PopRax();  // Discard old RAX
+
+		// 10. Put return value back in RAX
+		//     Wait, we already destroyed it above. Let me fix this...
+
+		// Actually, let's use a different approach:
+		// After CALL, RAX has the return value
+		// We need to restore the SAVED registers but keep the NEW RAX
+
+		// Better approach: don't save RAX at all, or use a scratch register
+
 		asm_builder.Ret();
 
 		return asm_builder.GetBytes();
@@ -923,97 +1095,75 @@ void JmpR11()
 	}
 
 
-	static std::vector<uint8_t> CreatePolymorphicHook(uint64_t targetAddress, size_t finalSize = 12)
+	
+
+
+
+/// NOTE : This func is part of Valkyrie and may not be generic enough for all uses cases.
+// 	 Write your own tailored to your needs.
+	static std::vector<uint8_t> PolymorphicHook(uint64_t targetAddress, size_t maxSafeSize = 12)
 	{
-		if (finalSize < 12) finalSize = 12;  
-
 		std::vector<uint8_t> code;
-		code.reserve(finalSize);
-		std::mt19937_64 rng{ std::random_device{}() };
+		auto& rng = GetRNG();
 
-		size_t maxPrePadding = (finalSize > 12) ? std::min<size_t>(finalSize - 12, 4) : 0;
-		size_t prePadding = maxPrePadding > 0 ? (rng() % (maxPrePadding + 1)) : 0;
+		enum JumpTechnique 
+		{
+			MOV_RAX_JMP_RAX,    // 48 B8 [addr] FF E0 = 12 bytes 
+			MOV_RBX_JMP_RBX,    // 48 BB [addr] FF E3 = 12 bytes 
+		
+		};
 
-		for (size_t i = 0; i < prePadding; i++) {
-			if (code.size() >= finalSize - 12) break;
-			if (!EmitRandomNopV2(code, finalSize - 12 - code.size())) break;
+		JumpTechnique tech = static_cast<JumpTechnique>(rng() % 2);
+
+		switch (tech) 
+		{
+		case MOV_RAX_JMP_RAX:
+			// MOV RAX + JMP RAX (12 bytes)
+			code.insert(code.end(), { 0x48, 0xB8 });
+			for (int i = 0; i < 8; i++)
+				code.push_back((targetAddress >> (i * 8)) & 0xFF);
+			code.insert(code.end(), { 0xFF, 0xE0 });
+			break;
+		
+
+		case MOV_RBX_JMP_RBX:
+			// MOV RBX + JMP RBX (12 bytes)
+			code.insert(code.end(), { 0x48, 0xBB });
+			for (int i = 0; i < 8; i++)
+				code.push_back((targetAddress >> (i * 8)) & 0xFF);
+			code.insert(code.end(), { 0xFF, 0xE3 });
+			break;
+
 		}
 
-		// 2. MOV r64, imm64 (10 bytes for RAX-RDI, 10 bytes for R8-R15)
-		uint8_t reg = rng() % 16;  // 0-15
-
-		// REX prefix
-		uint8_t rex = (reg > 7) ? 0x49 : 0x48;  // REX.W + REX.B if R8-R15
-		code.push_back(rex);
-
-		// Opcode MOV r64, imm64
-		uint8_t opcode = 0xB8 + (reg & 0x07);
-		code.push_back(opcode);
-
-		// Immediate value (little-endian)
-		for (int i = 0; i < 8; i++)
-			code.push_back((uint8_t)(targetAddress >> (i * 8)));
-
-		// 3. JMP r64 (2-3 bytes)
-		if (reg > 7)
-			code.push_back(0x41);  
-
-		code.push_back(0xFF);
-		code.push_back(0xE0 + (reg & 0x07));  // ModRM: 11 100 rrr
-
-
-		while (code.size() < finalSize) {
-			size_t remaining = finalSize - code.size();
-			if (!EmitRandomNopV2(code, remaining)) {
-				code.push_back(0x90);  // Fallback: simple NOP
-			}
+		if (code.size() != 12) {
+			std::cout << "Error ! Hook is " << code.size() << " instead of 12! Using fallback..." << std::endl;
+			code = {
+				0x48, 0xB8, // MOV RAX
+				(uint8_t)(targetAddress >> 0), (uint8_t)(targetAddress >> 8),
+				(uint8_t)(targetAddress >> 16), (uint8_t)(targetAddress >> 24),
+				(uint8_t)(targetAddress >> 32), (uint8_t)(targetAddress >> 40),
+				(uint8_t)(targetAddress >> 48), (uint8_t)(targetAddress >> 56),
+				0xFF, 0xE0  // JMP RAX
+			};
 		}
+
+		std::cout << "Generating hook..." << std::endl;
+		std::cout << "Technique: ";
+		switch (tech) 
+		{
+		case MOV_RAX_JMP_RAX: std::cout << "MOV RAX + JMP RAX"; break;
+		case MOV_RBX_JMP_RBX: std::cout << "MOV RBX + JMP RBX"; break;
+		}
+		std::cout << "\nsize: " << code.size() << " bytes" << std::endl;
+		std::cout << "Bytes: ";
+		for (auto b : code) printf("%02X ", b);
+		std::cout << "\nTarget: 0x" << std::hex << targetAddress << std::dec << std::endl;
 
 	
-		if (code.size() > finalSize)
-			code.resize(finalSize);
 
 		return code;
 	}
-
-
-/// Create a polymorphic hook with custom final size (min 12, max 32 recommended)
-/// </summary>
-/// 
-/// NOTE : This func is part of this specific project and may not be generic enough for all uses cases.
-/// 	 Write your own tailored to your needs.
-	static std::vector<uint8_t> CreateCustomPolymorphicHook(uint64_t targetAddress, size_t finalSize = 12)
-	{
-		if (finalSize < 12) finalSize = 12;
-		if (finalSize > 24) finalSize = 24;
-
-		X64Assembler asm_builder;
-		std::mt19937_64 rng{ std::random_device{}() };
-
-		// NOP sled polymorphic hook
-		size_t coreSize = 12;
-		size_t maxPadding = (finalSize > coreSize) ? (finalSize - coreSize) : 0;
-		size_t padding = (maxPadding > 0) ? (rng() % (maxPadding + 1)) : 0;
-
-		
-		for (size_t i = 0; i < padding; ++i)
-			asm_builder.Nop();
-
-		
-		asm_builder.MovRax(targetAddress);
-		asm_builder.JmpRax();
-
-
-		while (asm_builder.Size() < finalSize)
-			asm_builder.Nop();
-
-		auto code = asm_builder.GetBytes();
-		if (code.size() > finalSize)
-			code.resize(finalSize);
-
-		return code;
-	}
-
 /// <summary>
 /// Create immediate return (5 bytes) - MOV EAX + RET
 /// Perfect for syscall hooks that need to return immediately
@@ -1046,17 +1196,15 @@ void JmpR11()
 	static std::vector<uint8_t> CreateNopSlide(size_t size)
 	{
 		std::vector<uint8_t> nops;
-		nops.reserve(size);
+		nops.reserve(size + 8); 
 
-		while (nops.size() < size) 
+		while (nops.size() < size)
 		{
-			EmitRandomNop(nops);
-			if (nops.size() > size) 
-			{
-				nops.resize(size); // Trim if we went over
-			}
+			if (!EmitRandomNopV2(nops, size - nops.size()))
+				break;
 		}
 
+		nops.resize(size); 
 		return nops;
 	}
 

@@ -173,127 +173,123 @@ public:
 
 
 
-	template <typename T, typename... A>
-	bool CallKernelFunction(uint64_t KernelBase, T* out_result, uint64_t kernel_function_address, A... arguments)
-	{
-		constexpr bool is_void = std::is_same_v<T, void>;
-		static_assert(sizeof...(A) <= 4, "CallKernelFunction: max 4 arguments supported");
-
-		std::wcout << L"CallKernelFunction entry\n";
-
-		if constexpr (!is_void)
+		template <typename T, typename... A>
+		bool CallKernelFunction(uint64_t KernelBase, T* out_result, uint64_t kernel_function_address, A... arguments)
 		{
-			if (!out_result)
+			constexpr bool is_void = std::is_same_v<T, void>;
+			static_assert(sizeof...(A) <= 4, "CallKernelFunction: max 4 arguments supported");
+
+			std::wcout << L"CallKernelFunction entry\n";
+
+			if constexpr (!is_void)
 			{
-				std::wcout << L"out_result is null\n";
+				if (!out_result)
+				{
+					std::wcout << L"out_result is null\n";
+					return false;
+				}
+			}
+
+			if (!kernel_function_address)
+			{
+				std::wcout << L"kernel_function_address is null\n";
 				return false;
 			}
-		}
 
-		if (!kernel_function_address)
-		{
-			std::wcout << L"kernel_function_address is null\n";
-			return false;
-		}
+			HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+			if (!ntdll)
+			{
+				std::wcout << L"GetModuleHandleA(ntdll) failed\n";
+				return false;
+			}
 
-		HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-		if (!ntdll)
-		{
-			std::wcout << L"GetModuleHandleA(ntdll) failed\n";
-			return false;
-		}
+			const auto NtAddAtomUser = reinterpret_cast<void*>(GetProcAddress(ntdll, "NtAddAtom"));
+			if (!NtAddAtomUser)
+			{
+				std::wcout << L"GetProcAddress(NtAddAtom) failed\n";
+				return false;
+			}
 
-		const auto NtAddAtomUser = reinterpret_cast<void*>(GetProcAddress(ntdll, "NtAddAtom"));
-		if (!NtAddAtomUser)
-		{
-			std::wcout << L"GetProcAddress(NtAddAtom) failed\n";
-			return false;
-		}
+			uint64_t kernel_NtAddAtom = GetKernelModuleExport(KernelBase, "NtAddAtom");
+			if (!kernel_NtAddAtom)
+			{
+				std::wcout << L"GetKernelModuleExport(ntoskrnl.NtAddAtom) failed\n";
+				return false;
+			}
 
-		uint64_t kernel_NtAddAtom = GetKernelModuleExport(KernelBase, "NtAddAtom");
-		if (!kernel_NtAddAtom)
-		{
-			std::wcout << L"GetKernelModuleExport(ntoskrnl.NtAddAtom) failed\n";
-			return false;
-		}
+			uint8_t oriNtAddAtomBytes[12] = { 0 };
 
-		auto hook_vec = X64Assembler::CreateCustomPolymorphicHook(kernel_function_address, 12);
+			std::wcout << L"[DEBUG] Saving original bytes...\n";
+			if (!ReadMemory(kernel_NtAddAtom, &oriNtAddAtomBytes, 12))
+			{
+				std::wcout << L"[ERROR] Error saving NtAddAtom original prologue!" << std::endl;
+				return false;
+			}
 
-		std::wcout << L"[DEBUG] Hook generated, size: " << hook_vec.size() << L" bytes\n";
-		std::wcout << L"[DEBUG] Hook bytes: ";
-		for (size_t i = 0; i < hook_vec.size() && i < 20; i++) {
-			std::wcout << std::hex << static_cast<int>(hook_vec[i]) << L" ";
-		}
-		std::wcout << std::dec << L"\n";
 
-		const uint8_t shellcode_size = static_cast<uint8_t>(hook_vec.size());
-		std::wcout << L"[DEBUG] Shellcode size: " << static_cast<int>(shellcode_size) << L"\n";
+			std::wcout << L"[DEBUG] Original bytes: ";
+			for (int i = 0; i < 12; i++) {
+				std::wcout << std::hex << static_cast<int>(oriNtAddAtomBytes[i]) << L" ";
+			}
+			std::wcout << std::dec << L"\n";
 
-		uint8_t oriNtAddAtomBytes[12] = { 0 };
 
-		std::wcout << L"[DEBUG] Saving original bytes...\n";
-		if (!ReadMemory(kernel_NtAddAtom, &oriNtAddAtomBytes, 12))
-		{
-			std::wcout << L"[ERROR] Error saving NtAddAtom original prologue!" << std::endl;
-			return false;
-		}
+			std::wcout << L"[DEBUG] Original bytes saved successfully\n";
+
+			auto hook_vec = X64Assembler::PolymorphicHook(kernel_function_address, 12);
 
 		
-		std::wcout << L"[DEBUG] Original bytes: ";
-		for (int i = 0; i < 12; i++) {
-			std::wcout << std::hex << static_cast<int>(oriNtAddAtomBytes[i]) << L" ";
+			std::wcout << L"[DEBUG] Hook generated, size: " << hook_vec.size() << L" bytes\n";
+			std::wcout << L"[DEBUG] Hook bytes: ";
+			for (size_t i = 0; i < hook_vec.size() && i < 20; i++) {
+				std::wcout << std::hex << static_cast<int>(hook_vec[i]) << L" ";
+			}
+			std::wcout << std::dec << L"\n";
+
+			const uint8_t shellcode_size = static_cast<uint8_t>(hook_vec.size());
+			std::wcout << L"[DEBUG] Shellcode size: " << static_cast<int>(shellcode_size) << L"\n";
+
+		
+
+
+			if (!WriteToReadOnlyMemory(kernel_NtAddAtom, (void*)hook_vec.data(), 12))
+			{
+				std::wcout << L"[ERROR] WriteToReadOnlyMemory(hook) failed\n";
+				return false;
+			} 
+
+			std::wcout << L"[DEBUG] Hook written successfully\n";
+
+			// Make the call
+			using FunctionFn = T(__stdcall*)(A...);
+			const auto fn = reinterpret_cast<FunctionFn>(NtAddAtomUser);
+
+			if constexpr (is_void)
+			{
+				fn(arguments...);
+				std::wcout << L"[DEBUG] Void call completed\n";
+			}
+			else
+			{
+				*out_result = fn(arguments...);
+				std::wcout << L"[DEBUG] Call returned: " << *out_result << L"\n";
+			}
+
+			std::wcout << L"[DEBUG] Restoring original bytes...\n";
+
+			// And finally restore the original bytes.
+			const bool restored = WriteToReadOnlyMemory(kernel_NtAddAtom, &oriNtAddAtomBytes, 12);
+			if (!restored)
+			{
+				std::wcout << L"[ERROR] Restore failed\n";
+			}
+			else
+			{
+				std::wcout << L"[DEBUG] Restore OK\n";
+			}
+
+			std::wcout << L"[DEBUG] Function completed successfully\n";
+			return restored;
 		}
-		std::wcout << std::dec << L"\n";
-
-		// Anti recursion check
-		if (memcmp(oriNtAddAtomBytes, hook_vec.data(), sizeof(oriNtAddAtomBytes)) == 0)
-		{
-			std::wcout << L"[ERROR] Valkyrie hook detected. Aborting." << std::endl;
-			return false;
-		}
-
-		std::wcout << L"[DEBUG] Original bytes saved successfully\n";
-
-		std::wcout << L"[DEBUG] Installing hook...\n";
-		// Write the hook
-		if (!WriteToReadOnlyMemory(kernel_NtAddAtom, (void*)hook_vec.data(), shellcode_size))
-		{
-			std::wcout << L"[ERROR] WriteToReadOnlyMemory(hook) failed\n";
-			return false;
-		}
-		std::wcout << L"[DEBUG] Hook installed successfully\n";
-
-
-		// Make the call
-		using FunctionFn = T(__stdcall*)(A...);
-		const auto fn = reinterpret_cast<FunctionFn>(NtAddAtomUser);
-
-		if constexpr (is_void)
-		{
-			fn(arguments...);
-			std::wcout << L"[DEBUG] Void call completed\n";
-		}
-		else
-		{
-			*out_result = fn(arguments...);
-			std::wcout << L"[DEBUG] Call returned: " << *out_result << L"\n";
-		}
-
-		std::wcout << L"[DEBUG] Restoring original bytes...\n";
-
-		// And finally restore the original bytes.
-		const bool restored = WriteToReadOnlyMemory(kernel_NtAddAtom, &oriNtAddAtomBytes, shellcode_size);
-		if (!restored)
-		{
-			std::wcout << L"[ERROR] Restore failed\n";
-		}
-		else
-		{
-			std::wcout << L"[DEBUG] Restore OK\n";
-		}
-
-		std::wcout << L"[DEBUG] Function completed successfully\n";
-		return restored;
-	}
 
 };
