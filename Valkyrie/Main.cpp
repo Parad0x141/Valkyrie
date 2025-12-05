@@ -23,13 +23,6 @@
 #include "PatternScanner.hpp"
 
 
- // TODO //
-/*
-* Check bytes code of thoses potential candidates.
-NtQueryTimerResolution,
-NtSetTimerResolution,
-NtQuerySystemTime,
-NtQueryPerformanceCounter*/
 
 
 void MapDriver(IntelLoader& loader, ValkyrieMapper& mapper)
@@ -76,20 +69,6 @@ int wmain(int argc, wchar_t* arvg[])
 
 	StealthKit hushPuppy(loader);
 
-	/* PDBParser parser;
-
-	if (!parser.Init())
-	{
-		LOG_ERROR("Error, parser init failed.");
-	}
-	
-
-	if (!parser.LoadModule("ntoskrnl.exe", loader.GetNtoskrnlBaseAddress()))
-	{
-		LOG_ERROR("Failed to load ntoskrnl module");
-
-	}
-	*/
 
 
 	LOG_SUCCESS(" Dropping driver...\n");
@@ -158,7 +137,7 @@ int wmain(int argc, wchar_t* arvg[])
 	ValkStatus status = hushPuppy.CleanPiDDBCache(L"iqvw64e.sys", timestamp);
 	status = hushPuppy.ClearCIHashTable();
 
-
+	loader.ClearMmUnloadedDrivers();
 	loader.UnloadVulnDriver();
 
 	DeleteDriverFile();

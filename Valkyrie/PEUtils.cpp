@@ -2,27 +2,7 @@
 
 namespace PEUtils
 {
-    typedef struct _vRTL_PROCESS_MODULE_INFORMATION
-    {
-        HANDLE Section;
-        PVOID MappedBase;
-        PVOID ImageBase;
-        ULONG ImageSize;
-        ULONG Flags;
-        USHORT LoadOrderIndex;
-        USHORT InitOrderIndex;
-        USHORT LoadCount;
-        USHORT OffsetToFileName;
-        UCHAR FullPathName[256];
-
-    } RTL_PROCESS_MODULE_INFORMATION, * PRTL_PROCESS_MODULE_INFORMATION;
-
-    typedef struct _vRTL_PROCESS_MODULES
-    {
-        ULONG NumberOfModules;
-        RTL_PROCESS_MODULE_INFORMATION Modules[1];
-
-    }   RTL_PROCESS_MODULES, * PRTL_PROCESS_MODULES;
+   
 
 
     uint64_t GetModuleBaseAddress(const char* moduleName)
@@ -32,8 +12,9 @@ namespace PEUtils
         // Get required buffer size
         NtQuerySystemInformation((SYSTEM_INFORMATION_CLASS)11, nullptr, 0, &bufferSize); // 11 = SystemModuleInformation
 
-        if (bufferSize == 0) {
-            std::cout << "[-] Failed to get buffer size for kernel modules\n";
+        if (bufferSize == 0) 
+        {
+            LOG_ERROR("Failed to get module buffer size .");
             return 0;
         }
 
@@ -41,16 +22,19 @@ namespace PEUtils
         PRTL_PROCESS_MODULES modules = (PRTL_PROCESS_MODULES)buffer.get();
 
         NTSTATUS status = NtQuerySystemInformation((SYSTEM_INFORMATION_CLASS)11, modules, bufferSize, &bufferSize);
-        if (!NT_SUCCESS(status)) {
-            std::cout << "[-] NtQuerySystemInformation failed: 0x" << std::hex << status << "\n";
+        if (!NT_SUCCESS(status)) 
+        {
+            LOG_ERROR_HEX("NtQuerySystemInformation failed with error code ", status);
             return 0;
         }
 
-        for (ULONG i = 0; i < modules->NumberOfModules; i++) {
+        for (ULONG i = 0; i < modules->NumberOfModules; i++)
+        {
             auto module = &modules->Modules[i];
             char* fileName = (char*)module->FullPathName + module->OffsetToFileName;
 
-            if (_stricmp(fileName, moduleName) == 0) {
+            if (_stricmp(fileName, moduleName) == 0)
+            {
                 std::cout << "[+] Found " << moduleName << " at 0x" << std::hex << (uint64_t)module->ImageBase << std::dec << "\n";
                 return (uint64_t)module->ImageBase;
             }
@@ -109,7 +93,7 @@ namespace PEUtils
         std::ifstream file(PEPath, std::ios::binary | std::ios::ate);
         if (!file.is_open())
         {
-            std::wcout << L"[-] Failed to open file\n";
+            LOG_ERROR("Failed to open file");
             return nullptr;
         }
 
@@ -119,27 +103,27 @@ namespace PEUtils
         peImage->rawData.resize(fileSize);
         if (!file.read(reinterpret_cast<char*>(peImage->rawData.data()), fileSize))
         {
-            std::wcout << L"[-] Failed to read file\n";
+            LOG_ERROR("Failed to read file.");
             return nullptr;
         }
 
         if (fileSize < sizeof(IMAGE_DOS_HEADER))
         {
-            std::wcout << L"[-] File too small for DOS header\n";
+            LOG_ERROR("File too small for DOS headers.");
             return nullptr;
         }
 
         peImage->dosHeader = reinterpret_cast<PIMAGE_DOS_HEADER>(peImage->rawData.data());
         if (peImage->dosHeader->e_magic != IMAGE_DOS_SIGNATURE)
         {
-            std::wcout << L"[-] Invalid DOS signature\n";
+            LOG_ERROR("Invalid DOS signature.");
             return nullptr;
         }
 
         if (peImage->dosHeader->e_lfanew >= fileSize ||
             peImage->dosHeader->e_lfanew + sizeof(IMAGE_NT_HEADERS64) > fileSize)
         {
-            std::wcout << L"[-] Invalid e_lfanew offset\n";
+            LOG_ERROR("Invalid e_lfanew offset.");
             return nullptr;
         }
 
@@ -148,12 +132,12 @@ namespace PEUtils
 
         if (peImage->ntHeaders->Signature != IMAGE_NT_SIGNATURE)
         {
-            std::wcout << L"[-] Invalid NT signature\n";
+            LOG_ERROR("Invalid NT signature.");
             return nullptr;
         }
         if (peImage->ntHeaders->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64)
         {
-            std::wcout << L"[-] PE is not x64\n";
+            LOG_ERROR("PE is not X64. Valkyrie only support X64 drivers.");
             return nullptr;
         }
 
@@ -166,7 +150,7 @@ namespace PEUtils
             numSections * sizeof(IMAGE_SECTION_HEADER) >
             peImage->rawData.data() + fileSize)
         {
-            std::wcout << L"[-] Invalid section headers\n";
+            LOG_ERROR("Invalid section header.");
             return nullptr;
         }
 
@@ -194,25 +178,26 @@ namespace PEUtils
             }
             else
             {
-                std::wcout << L"[!] Warning: Invalid relocation directory\n";
+                LOG_ERROR("Invalid relocation data directory.");
             }
         }
         else
         {
-            std::wcout << L"[!] Warning: No relocations (PE may not be relocatable)\n";
+            LOG_ERROR("No relocation data found. Aborting.");
+            return nullptr;
         }
 
         auto& importDir = peImage->ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
         if (!importDir.Size || !importDir.VirtualAddress)
         {
-            std::wcout << L"[!] No imports found\n";
+            LOG_ERROR("No imports found in PE.");
         }
         else
         {
             DWORD importOffset = RvaToFileOffset(peImage->ntHeaders, importDir.VirtualAddress);
             if (importOffset >= fileSize)
             {
-                std::wcout << L"[!] Invalid import directory RVA\n";
+                LOG_ERROR("Invalid import directory.");
             }
             else
             {
@@ -341,14 +326,14 @@ import.ordinals.push_back(0);
         // Must be a x64 driver
         if (PEImage.ntHeaders->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC)
         {
-            std::wcout << L"[-] FAILED ! Not a 64-bit PE file\n";
+            LOG_ERROR("Validation failed. File is not a X64 PE.");
             return FALSE;
         }
 
         // Subsystem check if != NATIVE, not a driver
         if (PEImage.ntHeaders->OptionalHeader.Subsystem != IMAGE_SUBSYSTEM_NATIVE)
         {
-            std::wcout << L"[-]FAILED ! Not a native driver\n";
+            LOG_ERROR("Validation failed. File is not a X64 driver.");
             return FALSE;
         }
 
@@ -356,14 +341,14 @@ import.ordinals.push_back(0);
         // Does it have an entry point ?
         if (PEImage.ntHeaders->OptionalHeader.AddressOfEntryPoint == 0) 
         {
-            LOG_SUCCESS("[-] FAILED ! No DriverEntry");
+            LOG_ERROR("Validation failed. No driver entry point found.");
             return FALSE;
         }
 
         // Image size
         if (PEImage.ntHeaders->OptionalHeader.SizeOfImage < 0x1000)
         {
-           LOG_SUCCESS("[-] FAILED ! Image size too small");
+            LOG_ERROR("Validation failed. File size is too small.");
             return FALSE;
         }
 
@@ -401,7 +386,7 @@ import.ordinals.push_back(0);
             }
         }
 
-        LOG_SUCCESS("Driver PE validation passed");
+        LOG_SUCCESS("Driver PE validation passed.");
         return TRUE;
     }
 
@@ -412,7 +397,7 @@ import.ordinals.push_back(0);
 
         if (!file.is_open())
         {
-            std::cout << "[-] Error, failed to read file.";
+            LOG_ERROR("Error, failed to read file.");
             return {};
         }
 
@@ -422,7 +407,7 @@ import.ordinals.push_back(0);
         std::vector<uint8_t> buffer(size);
         if (!file.read((char*)buffer.data(), size))
         {
-            std::wcout << L"[-] Error, failed to read file\n";
+            LOG_ERROR("Error, failed to read file.");
         }
 
         std::wcout << L"[+] Read " << size << L"bytes from" << filePath << L"\n";

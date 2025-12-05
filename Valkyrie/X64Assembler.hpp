@@ -950,36 +950,41 @@ void JmpR11()
 
 		for (size_t i = 4; i < args.size(); ++i)
 		{
-			uint32_t stack_offset = 0x20 + ((i - 4) * 8);
+			// safer
+			uint64_t offset64 = 0x20ULL + ((i - 4) * 8ULL);
 
-			// MOV [RSP+offset], imm64 is complex, so we use a temp register
+			// Check if the offset fit in 32 bits
+			if (offset64 > 0xFFFFFFFFULL)
+			{
+				throw std::runtime_error("Stack offset too large");
+			}
+
+			uint32_t stack_offset = static_cast<uint32_t>(offset64);
+
+			// Debug output
+			printf("i=%zu, offset=0x%X\n", i, stack_offset);
+
 			asm_builder.MovRax(args[i]);
 
-			// MOV [RSP+offset], RAX
-			asm_builder.Emit(0x48);  // REX.W
-			asm_builder.Emit(0x89);  // MOV r/m64, r64
-			asm_builder.Emit(0x84);  // ModRM: [RSP + disp32]
-			asm_builder.Emit(0x24);  // SIB: [RSP]
+			asm_builder.Emit(0x48);
+			asm_builder.Emit(0x89);
+			asm_builder.Emit(0x84);
+			asm_builder.Emit(0x24);
 			asm_builder.EmitDword(stack_offset);
 		}
 
-		// 5. Call function
 		asm_builder.MovRax(functionAddress);
 		asm_builder.CallRax();
 
-		// 6. Save return value (RAX) temporarily
 		asm_builder.PushRax();
 
-		// 7. Cleanup stack
 		if (total_alloc <= 0xFF)
 			asm_builder.AddRspImm8(static_cast<uint8_t>(total_alloc));
 		else
 			asm_builder.AddRspImm32(static_cast<uint32_t>(total_alloc));
 
-		// 8. Restore return value to R10 (temporary)
-		asm_builder.PopR10();  // R10 = return value
+		asm_builder.PopR10(); 
 
-		// 9. Restore volatile registers (except RAX, we'll put return value there)
 		asm_builder.PopR11();
 		asm_builder.PopR10();  // This pops the OLD R10 value we saved in step 1
 		asm_builder.PopR9();
@@ -988,14 +993,6 @@ void JmpR11()
 		asm_builder.PopRcx();
 		asm_builder.PopRax();  // Discard old RAX
 
-		// 10. Put return value back in RAX
-		//     Wait, we already destroyed it above. Let me fix this...
-
-		// Actually, let's use a different approach:
-		// After CALL, RAX has the return value
-		// We need to restore the SAVED registers but keep the NEW RAX
-
-		// Better approach: don't save RAX at all, or use a scratch register
 
 		asm_builder.Ret();
 
@@ -1136,9 +1133,11 @@ void JmpR11()
 
 		}
 
-		if (code.size() != 12) {
+		if (code.size() != 12) 
+		{
 			std::cout << "Error ! Hook is " << code.size() << " instead of 12! Using fallback..." << std::endl;
-			code = {
+			code = 
+			{
 				0x48, 0xB8, // MOV RAX
 				(uint8_t)(targetAddress >> 0), (uint8_t)(targetAddress >> 8),
 				(uint8_t)(targetAddress >> 16), (uint8_t)(targetAddress >> 24),
@@ -1150,17 +1149,18 @@ void JmpR11()
 
 		std::cout << "Generating hook..." << std::endl;
 		std::cout << "Technique: ";
+
 		switch (tech) 
 		{
 		case MOV_RAX_JMP_RAX: std::cout << "MOV RAX + JMP RAX"; break;
 		case MOV_RBX_JMP_RBX: std::cout << "MOV RBX + JMP RBX"; break;
 		}
+
 		std::cout << "\nsize: " << code.size() << " bytes" << std::endl;
 		std::cout << "Bytes: ";
+
 		for (auto b : code) printf("%02X ", b);
 		std::cout << "\nTarget: 0x" << std::hex << targetAddress << std::dec << std::endl;
-
-	
 
 		return code;
 	}

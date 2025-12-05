@@ -491,34 +491,6 @@ PVOID IntelLoader::RtlEnumerateGenericTableWithoutSplayingAvl(PRTL_AVL_TABLE Tab
 	return result;
 }
 
-// dans StealthKit.cpp
-NTSTATUS IntelLoader::ZwQuerySystemInformationKernel(ULONG infoClass,
-	PVOID buffer,
-	ULONG bufSize,
-	PULONG retLen)
-{
-	if (!GetNtoskrnlBaseAddress()) return STATUS_NOT_FOUND;
-
-	// 1. resolve ZwQuerySystemInformation
-	UINT64 pfn = GetKernelModuleExport(
-		GetNtoskrnlBaseAddress(),
-		"ZwQuerySystemInformation");
-	if (!pfn) return STATUS_NOT_FOUND;
-
-	// 2. mimic via CallKernelFunction
-	NTSTATUS status = 0;
-	CallKernelFunction(
-		GetNtoskrnlBaseAddress(),
-		&status,
-		pfn,
-		(uint64_t)static_cast<SYSTEM_INFORMATION_CLASS>(infoClass),
-		(uint64_t)buffer,
-		(uint64_t)bufSize,
-		(uint64_t)retLen);
-
-	return status;
-}
-
 
 BOOL IntelLoader::ReadMemory(uint64_t address, void* buffer, uint64_t size)
 {
@@ -568,86 +540,86 @@ UINT64 IntelLoader::GetKernelModuleExport(uint64_t kernel_module_base, const std
 	if (!kernel_module_base || function_name.empty())
 		return 0;
 
-	IMAGE_DOS_HEADER dos_header = {};
-	IMAGE_NT_HEADERS64 nt_headers = {};
+	IMAGE_DOS_HEADER dosHeader = {};
+	IMAGE_NT_HEADERS64 ntHeaders = {};
 
-	if (!ReadMemory(kernel_module_base, &dos_header, sizeof(dos_header)) || dos_header.e_magic != IMAGE_DOS_SIGNATURE)
+	if (!ReadMemory(kernel_module_base, &dosHeader, sizeof(dosHeader)) || dosHeader.e_magic != IMAGE_DOS_SIGNATURE)
 		return 0;
 
-	if (!ReadMemory(kernel_module_base + dos_header.e_lfanew, &nt_headers, sizeof(nt_headers)) || nt_headers.Signature != IMAGE_NT_SIGNATURE)
+	if (!ReadMemory(kernel_module_base + dosHeader.e_lfanew, &ntHeaders, sizeof(ntHeaders)) || ntHeaders.Signature != IMAGE_NT_SIGNATURE)
 		return 0;
 
-	const auto& export_dir = nt_headers.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+	const auto& export_dir = ntHeaders.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
 	if (!export_dir.VirtualAddress || !export_dir.Size)
 		return 0;
 
-	const auto export_data = reinterpret_cast<PIMAGE_EXPORT_DIRECTORY>(VirtualAlloc(nullptr, export_dir.Size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
-	if (!export_data)
+	const auto exportData = reinterpret_cast<PIMAGE_EXPORT_DIRECTORY>(VirtualAlloc(nullptr, export_dir.Size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+	if (!exportData)
 		return 0;
 
-	if (!ReadMemory(kernel_module_base + export_dir.VirtualAddress, export_data, export_dir.Size))
+	if (!ReadMemory(kernel_module_base + export_dir.VirtualAddress, exportData, export_dir.Size))
 	{
-		VirtualFree(export_data, 0, MEM_RELEASE);
+		VirtualFree(exportData, 0, MEM_RELEASE);
 		return 0;
 	}
 
-	const auto delta = reinterpret_cast<uintptr_t>(export_data) - export_dir.VirtualAddress;
+	const auto delta = reinterpret_cast<uintptr_t>(exportData) - export_dir.VirtualAddress;
 
-	const auto name_rvas = reinterpret_cast<uint32_t*>(export_data->AddressOfNames + delta);
-	const auto ordinals = reinterpret_cast<uint16_t*>(export_data->AddressOfNameOrdinals + delta);
-	const auto function_rvas = reinterpret_cast<uint32_t*>(export_data->AddressOfFunctions + delta);
+	const auto nameRvas = reinterpret_cast<uint32_t*>(exportData->AddressOfNames + delta);
+	const auto ordinals = reinterpret_cast<uint16_t*>(exportData->AddressOfNameOrdinals + delta);
+	const auto functionRvas = reinterpret_cast<uint32_t*>(exportData->AddressOfFunctions + delta);
 
-	for (uint32_t i = 0; i < export_data->NumberOfNames; ++i)
+	for (uint32_t i = 0; i < exportData->NumberOfNames; ++i)
 	{
-		const char* current_name = reinterpret_cast<const char*>(name_rvas[i] + delta);
-		if (_stricmp(current_name, function_name.c_str()) != 0)
+		const char* currentName = reinterpret_cast<const char*>(nameRvas[i] + delta);
+		if (_stricmp(currentName, function_name.c_str()) != 0)
 			continue;
 
 		const uint16_t ordinal = ordinals[i];
-		const uint32_t function_rva = function_rvas[ordinal];
+		const uint32_t functionRva = functionRvas[ordinal];
 
 		// ? Forwarder check
-		const bool is_forwarded = function_rva >= export_dir.VirtualAddress &&
-			function_rva < export_dir.VirtualAddress + export_dir.Size;
+		const bool is_forwarded = functionRva >= export_dir.VirtualAddress &&
+			functionRva < export_dir.VirtualAddress + export_dir.Size;
 
 		if (is_forwarded)
 		{
-			char forward_str[256] = {};
-			if (!ReadMemory(kernel_module_base + function_rva, forward_str, sizeof(forward_str)))
+			char forwardStr[256] = {};
+			if (!ReadMemory(kernel_module_base + functionRva, forwardStr, sizeof(forwardStr)))
 			{
-				VirtualFree(export_data, 0, MEM_RELEASE);
+				VirtualFree(exportData, 0, MEM_RELEASE);
 				return 0;
 			}
 
-			const std::string forward(forward_str);
+			const std::string forward(forwardStr);
 			const auto dot = forward.find('.');
 			if (dot == std::string::npos)
 			{
-				VirtualFree(export_data, 0, MEM_RELEASE);
+				VirtualFree(exportData, 0, MEM_RELEASE);
 				return 0;
 			}
 
-			const std::string target_module = forward.substr(0, dot) + ".sys";
-			const std::string target_function = forward.substr(dot + 1);
+			const std::string targetModule = forward.substr(0, dot) + ".sys";
+			const std::string targetFunction = forward.substr(dot + 1);
 
-			const uint64_t target_base = PEUtils::GetModuleBaseAddress(target_module.c_str());
-			if (!target_base)
+			const uint64_t targetBase = PEUtils::GetModuleBaseAddress(targetModule.c_str());
+			if (!targetBase)
 			{
-				VirtualFree(export_data, 0, MEM_RELEASE);
+				VirtualFree(exportData, 0, MEM_RELEASE);
 				return 0;
 			}
 
-			const uint64_t result = GetKernelModuleExport(target_base, target_function);
-			VirtualFree(export_data, 0, MEM_RELEASE);
+			const uint64_t result = GetKernelModuleExport(targetBase, targetFunction);
+			VirtualFree(exportData, 0, MEM_RELEASE);
 			return result;
 		}
 
-		const uint64_t result = kernel_module_base + function_rva;
-		VirtualFree(export_data, 0, MEM_RELEASE);
+		const uint64_t result = kernel_module_base + functionRva;
+		VirtualFree(exportData, 0, MEM_RELEASE);
 		return result;
 	}
 
-	VirtualFree(export_data, 0, MEM_RELEASE);
+	VirtualFree(exportData, 0, MEM_RELEASE);
 	return 0;
 }
 
@@ -765,7 +737,6 @@ PVOID IntelLoader::ResolveRelativeAddress(PVOID Instruction, ULONG OffsetOffset,
 	std::wcout << L"[DEBUG] Resolving relative address at: 0x" << std::hex << Instr
 		<< L", offset: " << OffsetOffset << L", instruction size: " << InstructionSize << std::dec << std::endl;
 
-	// Lire les bytes autour de l'instruction pour debug
 	BYTE instructionBytes[16] = { 0 };
 	if (ReadMemory(Instr, instructionBytes, sizeof(instructionBytes)))
 	{
@@ -792,6 +763,9 @@ PVOID IntelLoader::ResolveRelativeAddress(PVOID Instruction, ULONG OffsetOffset,
 
 	return resolvedAddress;
 }
+
+
+
 uint64_t IntelLoader::MmAllocateIndependentPagesEx(uint32_t size)
 {
 	if (!ntoskrnlBaseAddress)
@@ -806,12 +780,6 @@ uint64_t IntelLoader::MmAllocateIndependentPagesEx(uint32_t size)
 
 	static uint64_t kernel_MmAllocateIndependentPagesEx = 0;
 
-	if (!kernel_MmAllocateIndependentPagesEx)
-	{
-		std::wcout << L"[DEBUG] Searching for MmAllocateIndependentPagesEx pattern..." << std::endl;
-
-		kernel_MmAllocateIndependentPagesEx = GetKernelModuleExport(ntoskrnlBaseAddress, "MmAllocateIndependentPagesEx");
-
 		if (!kernel_MmAllocateIndependentPagesEx)
 		{
 			std::wcout << L"[DEBUG] Trying pattern search..." << std::endl;
@@ -825,11 +793,10 @@ uint64_t IntelLoader::MmAllocateIndependentPagesEx(uint32_t size)
 				(BYTE*)"\x41\x8B\xD6\xB9\x00\x10\x00\x00\xE8\x00\x00\x00\x00\x48\x8B\xD8",
 				(char*)"xxxxxxxxx????xxx");
 
-			LOG_SUCCESS_HEX("Found by ORIGINAL func NOT SCANNER",kernel_MmAllocateIndependentPagesEx);
-
 			const auto& s = SigTable::NT::MmAllocateIndependentPagesEx;
 
 			PatternScanner ps(*this);
+
 			uintptr_t hit = ps.FindPattern(GetNtoskrnlBaseAddress(), s.section, (BYTE*)s.bytes, s.mask, false, false); // cache OFF, SIMD OFF
 			printf("PatternScanner hit = 0x%llX\n", hit);
 		
@@ -859,7 +826,7 @@ uint64_t IntelLoader::MmAllocateIndependentPagesEx(uint32_t size)
 
 		std::wcout << L"[+] MmAllocateIndependentPagesEx resolved to: 0x"
 			<< std::hex << kernel_MmAllocateIndependentPagesEx << std::dec << std::endl;
-	}
+	
 
 	// Appeler la fonction
 	uint64_t out = 0;
@@ -897,8 +864,6 @@ BOOLEAN IntelLoader::MmFreeIndependentPages(uint64_t addr, uint32_t size)
 	{
 		LOG_SUCCESS("[DEBUG] Searching for MmFreeIndependentPages pattern...");
 
-		// Try export first (cleaner)
-		kernel_MmFreeIndependentPages = GetKernelModuleExport(ntoskrnlBaseAddress, "MmFreeIndependentPages");
 
 		if (!kernel_MmFreeIndependentPages)
 		{
@@ -1050,32 +1015,33 @@ VOID IntelLoader::SetKernelBaseAddress()
 }
 
 
-// FIX THIS !!! Zero the maxlenght and buffer too.
 BOOL IntelLoader::ClearMmUnloadedDrivers()
 {
-
 	std::wcout << L"[DEBUG] Enter ClearMmUnloadedDrivers\n" << std::flush;
 
-	ULONG       len = 0;
-	std::vector<uint8_t> buf;
-	NTSTATUS    st;
+	ULONG lenght = 0;
+	std::vector<uint8_t> buffer;
+	NTSTATUS status;
 
-	do 
+	do
 	{
-		buf.resize(len);
-		st = NtQuerySystemInformation(
+		buffer.resize(lenght);
+		status = NtQuerySystemInformation(
 			SystemExtendedHandleInformation,
-			buf.data(), static_cast<ULONG>(buf.size()), &len);
-	} while (st == STATUS_INFO_LENGTH_MISMATCH);
+			buffer.data(),
+			static_cast<ULONG>(buffer.size()), 
+			&lenght);
 
-	if (!NT_SUCCESS(st))
+	} while (status == STATUS_INFO_LENGTH_MISMATCH);
+
+	if (!NT_SUCCESS(status))
 	{
-		std::wcout << L"[!] NtQuerySystemInformation failed 0x" << std::hex << st << L'\n';
+		std::wcout << L"[!] NtQuerySystemInformation failed 0x" << std::hex << status << L'\n';
 		return false;
 	}
 
-	const auto* info = reinterpret_cast<const SYSTEM_HANDLE_INFORMATION_EX*>(buf.data());
-	std::wcout << L"[DEBUG] Total handles : " << info->NumberOfHandles << L'\n';
+	const auto* info = reinterpret_cast<const SYSTEM_HANDLE_INFORMATION_EX*>(buffer.data());
+	std::wcout << L"[DEBUG] Total handles: " << info->NumberOfHandles << L'\n';
 
 	uint64_t object = 0;
 	for (ULONG_PTR i = 0; i < info->NumberOfHandles; ++i)
@@ -1083,8 +1049,8 @@ BOOL IntelLoader::ClearMmUnloadedDrivers()
 		const auto& h = info->Handles[i];
 		if (reinterpret_cast<HANDLE>(h.UniqueProcessId) == UlongToHandle(GetCurrentProcessId()))
 		{
-			std::wcout << L"[DEBUG] PID match, handle value : 0x" << std::hex << h.HandleValue
-				<< L"  vs hIntelDriver : 0x" << hIntelDriver << L'\n';
+			std::wcout << L"[DEBUG] PID match, handle value: 0x" << std::hex << h.HandleValue
+				<< L" vs hIntelDriver: 0x" << hIntelDriver << L'\n';
 			if (reinterpret_cast<HANDLE>(h.HandleValue) == hIntelDriver)
 			{
 				object = reinterpret_cast<uint64_t>(h.Object);
@@ -1093,46 +1059,100 @@ BOOL IntelLoader::ClearMmUnloadedDrivers()
 			}
 		}
 	}
+
 	if (!object)
 	{
 		std::wcout << L"[!] Intel driver handle not found in table\n";
 		return false;
 	}
 
-	    auto read64 = [this](uint64_t addr, uint64_t& out)
-		{ return ReadMemory(addr, &out, sizeof(out)) && out != 0; };
+	auto read64 = [this](uint64_t addr, uint64_t& out)
+		{
+			return ReadMemory(addr, &out, sizeof(out)) && out != 0;
+		};
 
 	uint64_t devObj = 0, drvObj = 0, drvSec = 0;
-	if (!read64(object + 0x8, devObj)) { std::wcout << L"[!] devObj fail\n"; return false; }
-	if (!read64(devObj + 0x8, drvObj)) { std::wcout << L"[!] drvObj fail\n"; return false; }
-	if (!read64(drvObj + 0x28, drvSec)) { std::wcout << L"[!] drvSec fail\n"; return false; }
-
-	UNICODE_STRING us{};
-	if (!ReadMemory(drvSec + 0x58, &us, sizeof(us)) || !us.Length) 
-	{
-		std::wcout << L"[!] UNICODE_STRING empty or read fail\n";
+	if (!read64(object + 0x8, devObj)) {
+		std::wcout << L"[!] devObj fail\n";
+		return false;
+	}
+	if (!read64(devObj + 0x8, drvObj)) {
+		std::wcout << L"[!] drvObj fail\n";
+		return false;
+	}
+	if (!read64(drvObj + 0x28, drvSec)) {
+		std::wcout << L"[!] drvSec fail\n";
 		return false;
 	}
 
-	std::wstring name(us.Length / sizeof(wchar_t), L'\0');
-	if (!ReadMemory(reinterpret_cast<uintptr_t>(us.Buffer), name.data(), us.Length)) 
+	// Lire l'UNICODE_STRING originale
+	UNICODE_STRING originalUs = { 0 };
+	if (!ReadMemory(drvSec + 0x58, &originalUs, sizeof(originalUs)))
 	{
-		std::wcout << L"[!] Buffer name read fail\n";
+		std::wcout << L"[!] Failed to read UNICODE_STRING\n";
 		return false;
 	}
 
+	if (originalUs.Length == 0 && originalUs.Buffer == nullptr)
+	{
+		std::wcout << L"[+] UNICODE_STRING already cleaned\n";
+		return true;
+	}
+
+	std::wstring driverName;
+	if (originalUs.Length > 0 && originalUs.Buffer != nullptr)
+	{
+		driverName.resize(originalUs.Length / sizeof(wchar_t));
+		if (ReadMemory(reinterpret_cast<uintptr_t>(originalUs.Buffer),
+			driverName.data(), originalUs.Length))
+		{
+			std::wcout << L"[DEBUG] Driver name: " << driverName << L'\n';
+		}
+	}
+
+	
 	UNICODE_STRING emptyUs = { 0, 0, nullptr };
-	if (!WriteMemory(drvSec + 0x58, &us, sizeof(emptyUs))) 
+
+	// Overwrite the struct
+	if (!WriteMemory(drvSec + 0x58, &emptyUs, sizeof(emptyUs)))
 	{
-		std::wcout << L"[!] Write UNICODE_STRING.Length fail\n";
+		std::wcout << L"[!] Failed to write empty UNICODE_STRING\n";
 		return false;
 	}
-	
 
-	
-	std::wcout << L"[+] MmUnloadedDrivers cleaned: " << name << L'\n';
+	// Now zeroing the buffer too ti be extra clean
+	if (originalUs.Buffer && originalUs.MaximumLength > 0)
+	{
+		
+		std::vector<wchar_t> zeroBuffer(originalUs.MaximumLength / sizeof(wchar_t), 0);
+
+
+		WriteMemory(reinterpret_cast<uintptr_t>(originalUs.Buffer),
+			zeroBuffer.data(), originalUs.MaximumLength);
+
+		std::wcout << L"[DEBUG] Zeroed buffer of size: " << originalUs.MaximumLength << L'\n';
+	}
+
+	// Checking
+	UNICODE_STRING verifyUs = { 0 };
+	if (ReadMemory(drvSec + 0x58, &verifyUs, sizeof(verifyUs)))
+	{
+		if (verifyUs.Length == 0 && verifyUs.Buffer == nullptr)
+		{
+			std::wcout << L"[+] Successfully cleared UNICODE_STRING\n";
+		}
+		else
+		{
+			std::wcout << L"[!] Verification failed - string not cleared!\n";
+			std::wcout << L"[!] Length: " << verifyUs.Length
+				<< L", Buffer: 0x" << std::hex << verifyUs.Buffer << std::dec << L'\n';
+			return false;
+		}
+	}
+
 	return true;
 }
+
 uint64_t IntelLoader::GetNtoskrnlBaseAddress() const noexcept
 {
 	return ntoskrnlBaseAddress;

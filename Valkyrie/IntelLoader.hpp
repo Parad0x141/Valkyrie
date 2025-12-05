@@ -76,29 +76,6 @@ typedef struct _UNMAP_IO_SPACE_BUFFER_INFO
 }UNMAP_IO_SPACE_BUFFER_INFO, * PUNMAP_IO_SPACE_BUFFER_INFO;
 
 
-struct SyscallGate
-{
-	const char* userModeName;      
-	const char* kernelModeName;   
-};
-
-// That's enough for now. Except NtAddAtom wich is probably watched now by EDR/AC/AV because of KDMapper 
-// the rest are unwatched and rarely used. No races, no problems :).
-// Feeling cute and oldschool today, using C style inline array :3.
-inline const SyscallGate cleanSysGates[] = {
-	{ "NtYieldExecution", "ZwYieldExecution" },
-	{ "NtQueryTimerResolution", "ZwQueryTimerResolution" },
-	{ "NtAddAtom", "NtAddAtom" },
-	{ "NtSetTimerResolution", "ZwSetTimerResolution" },
-};
-
-// Not impl yet.
-inline const SyscallGate& PickRandomGate()
-{
-	
-}
-
-
 
 
 class IntelLoader
@@ -139,8 +116,7 @@ public:
 	BOOL ExAcquireResourceExclusiveLite(PVOID Resource, BOOLEAN Wait);
 	BOOL ExReleaseResourceLite(PVOID resource);
 
-	// Dead code for now but i might need it later so i'll leave the decl here.
-	NTSTATUS ZwQuerySystemInformationKernel(ULONG infoClass, PVOID buffer, ULONG bufSize, PULONG retLen);
+	
 
 
 
