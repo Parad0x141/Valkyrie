@@ -30,9 +30,10 @@ static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMappe
 	std::string narrowedPath = WStringToString(args.driverPath);
 
 	auto pe = PEUtils::ParsePE(narrowedPath);
+
 	if (!pe || !PEUtils::ValidateDriverPE(*pe))
 	{
-		LOG_ERROR("Error invalid driver PE");
+		LOG_ERROR("Error. invalid driver PE");
 		return;
 	}
 
@@ -42,6 +43,7 @@ static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMappe
 	{
 		system("cls");
 		LOG_WARNING("Mapping aborted by user. Cleaning Intel driver traces...");
+		JumpLine();
 
 		ValkStatus status = stealthKit.CleanPiDDBCache(L"iqvw64e.sys", timestamp);
 		status = stealthKit.ClearCIHashTable();
@@ -51,7 +53,7 @@ static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMappe
 
 		DeleteDriverFile();
 
-		LOG_SUCCESS("Success. Press Enter to exit. Goodbye !");
+		LOG_SUCCESS(L"All operations completed. Press Enter to exit. Farewell !");
 		std::wcin.ignore();
 		return;
 	}
@@ -63,19 +65,23 @@ static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMappe
 	
 	ULONG64 mappedBase = mapper.MapDriver(
 		*pe,
-		0, 0, true, true,
+		0, 0, args.freeMemory, args.noHeaderScramble,
 		AllocationMode::AllocateIndependentPages,
 		false,&exitCode);
 
-
+	JumpLine();
 	LOG_SUCCESS_HEX("Driver mapped ! Driver entry called, returned : ", exitCode);
+	JumpLine();
 
-	if(args.freeMemory)
+	// Only show the base address if it's not a one-shot driver.
+	if(!args.freeMemory)
 		LOG_SUCCESS_HEX("Base address of mapped driver : ", mappedBase);
-	if (!args.freeMemory)
+	if (args.freeMemory)
 		LOG_SUCCESS("Memory cleaned, driver unloaded !");
 
+	JumpLine();
 	LOG_INFO("Cleaning Intel driver traces...");
+	JumpLine();
 
 	ValkStatus status = stealthKit.CleanPiDDBCache(L"iqvw64e.sys", timestamp);
 	status = stealthKit.ClearCIHashTable();
@@ -86,7 +92,7 @@ static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMappe
 	DeleteDriverFile();
 	
 	JumpLine();
-	LOG_SUCCESS("Success. Press Enter to exit. Goodbye !");
+	LOG_SUCCESS(L"All operations completed. Press Enter to exit. Farewell !");
 	JumpLine();
 
 	std::wcin.ignore();
@@ -110,7 +116,7 @@ int wmain(int argc, wchar_t* arvg[])
 
 
 	Splash();
-	std::cout << "\n";
+	JumpLine();
 	std::cout << "Press Enter to continue..." << "\n";
 	std::wcin.get();
 

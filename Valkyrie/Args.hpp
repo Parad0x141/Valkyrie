@@ -10,8 +10,8 @@ struct Args
 
     bool help = false;
     bool noStealth = false;
+    bool noHeaderScramble = false;
     bool freeMemory = false;
-    bool scrambleHeader = false;
     bool deepWipe = false;
 };
 
@@ -44,9 +44,9 @@ Args ParseArgs(int argc, wchar_t* argv[])
    
     static Flag flags[] = {
         { L"--help",               L"-h", &a.help},
-        { L"--noStealth",          L"-n", &a.noStealth},
+        { L"--noStealth",          L"-nost", &a.noStealth},
+        { L"--noHeaderScramble",   L"-nosc", &a.noHeaderScramble},
         { L"--freeMemory",         L"-f", &a.freeMemory},
-        { L"--scrambleHeader",     L"-s", &a.scrambleHeader},
         { L"--deepWipe",           L"-d", &a.deepWipe},
     };
 

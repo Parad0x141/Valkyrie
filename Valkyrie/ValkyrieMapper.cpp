@@ -139,7 +139,7 @@ bool ValkyrieMapper::ResolveImports(const vec_imports imports)
 
 
 
-ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2, BOOL freeMemAfterUse, BOOL wipeHeader,
+ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2, BOOL freeMemAfterUse, BOOL noHeaderScramble,
     AllocationMode mode, BOOL PassAllocationAddressAsFirstParam,NTSTATUS* exitCode)
 {
     void* localBase = VirtualAlloc(nullptr, drvImage.imageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -183,7 +183,7 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 	}
 	else if(!ResolveImports(GetImports(localBase)))
 	{
-		LOG_ERROR("Error, failed to resolve one or more imports");
+		LOG_ERROR("Error, failed to resolve one or more imports.");
 	}
 
 
@@ -192,7 +192,7 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 		<< L", 0x" << std::hex << allocSize << L", RW)");
 	if (!m_loader.MmSetPageProtection(kernelBase, allocSize, PAGE_READWRITE))
 	{
-		LOG_ERROR("MmSetPageProtection RW failed");
+		LOG_ERROR("MmSetPageProtection RW failed.");
 	}
 
 
@@ -205,7 +205,10 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 		LOG_ERROR("WriteMemory failed");
 	}
 
-	if (wipeHeader)
+
+	// Calculate safely header from the parsed PE, then scramble with junk bytes.
+	if (!noHeaderScramble) // Branch is a bit confusing. By default we always scramble the header, but if                        
+		                   // this arg is set to true by the user we leave the header intact.
 	{
 		LOG_INFO("Scrambling driver header before mapping...");
 		uint32_t headerSize = drvImage.ntHeaders->OptionalHeader.SizeOfHeaders;
@@ -214,14 +217,16 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 
 		if (!m_loader.WriteMemory(kernelBase, junkBytes.data(), headerSize))
 		{
-			LOG_ERROR("Error, cannot write junkbytes into driver header.");
+			LOG_ERROR("Error, cannot write junk bytes into driver header.");
 		}
 		else
 			LOG_SUCCESS_HEX("Scrambled bytes : ", headerSize);
 	}
 
 	// Fixing protection
+	JumpLine();
 	LOG_INFO("Fixing sections permissions...");
+	JumpLine();
 
 	for (const auto& sec : drvImage.sections)
 	{
@@ -243,11 +248,11 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 		ULONG64 sectionAddress = kernelBase + sec.VirtualAddress;
 		ULONG32 sectionSize = (sec.Misc.VirtualSize + 0xFFF) & ~0xFFF; // Aligned
 
-		LOG_SUCCESS(L"Section : " << std::wstring(name, name + strnlen(name, 8)));
-		LOG_SUCCESS_HEX("RVA", sec.VirtualAddress);
-		LOG_SUCCESS_HEX("Kernel addr", kernelBase + sec.VirtualAddress);
-		LOG_SUCCESS_HEX("Size", static_cast<ULONG32>((sec.Misc.VirtualSize + 0xFFF) & ~0xFFF));
-		LOG_SUCCESS_HEX("Prot", prot);
+		//LOG_SUCCESS(L"Section : " << std::wstring(name, name + strnlen(name, 8)));
+		//LOG_SUCCESS_HEX("RVA", sec.VirtualAddress);
+		//LOG_SUCCESS_HEX("Kernel addr", kernelBase + sec.VirtualAddress);
+		//LOG_SUCCESS_HEX("Size", static_cast<ULONG32>((sec.Misc.VirtualSize + 0xFFF) & ~0xFFF));
+		//LOG_SUCCESS_HEX("Prot", prot);
 
 		if (!m_loader.MmSetPageProtection(sectionAddress, sectionSize, prot))
 		{
@@ -283,6 +288,8 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 
 	VirtualFree(localBase, 0, MEM_RELEASE);
 
+
+	// Free kernel pages if this a non persistent driver.
 	if (freeMemAfterUse)
 	{
 		LOG_INFO("Freeing kernel pages...");
@@ -295,10 +302,12 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 
 		LOG_SUCCESS("Successfully unallocated pages.");
 			
-		return 0; // Driver unloaded, pages are free.
+		return 0;
 	}
 
-	LOG_SUCCESS("Driver successfully loaded and persistent");
+
+
+	LOG_SUCCESS("Driver successfully loaded and persistent.");
 	return kernelBase;
 
 }
@@ -317,7 +326,7 @@ bool ValkyrieMapper::FixSecurityCookie(void* local_image, ULONG64 kernel_image_b
 	auto load_config_directory = headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].VirtualAddress;
 	if (!load_config_directory)
 	{
-		LOG_SUCCESS("Load config directory not found or cookie not set. Skipping...");
+		LOG_INFO("Load config directory not found or cookie not set. Skipping...");
 		return true;
 	}
 
@@ -337,17 +346,18 @@ bool ValkyrieMapper::FixSecurityCookie(void* local_image, ULONG64 kernel_image_b
 	}
 
 
-	stack_cookie = stack_cookie - (uintptr_t)kernel_image_base + (uintptr_t)local_image; //since our local image is already relocated the base returned will be kernel address
+	stack_cookie = stack_cookie - (uintptr_t)kernel_image_base + (uintptr_t)local_image;
 
 	// Default magic number set by the linker at runtime.
 	// Since this is manual mapping, this should not have beed modified/set by anything else or something wrong.
 	if (*(uintptr_t*)(stack_cookie) != 0x2B992DDFA232)
 	{
-		LOG_SUCCESS("StackCookie already modified or corrupt. Aborting");
+		LOG_ERROR("StackCookie already modified or corrupt. Aborting");
 		return false;
 	}
 
-	LOG_SUCCESS("Security checks done. Generating StackCookie now...");
+	JumpLine();
+	LOG_INFO("Security checks done. Generating StackCookie now...");
 
 	auto new_cookie = []() -> uint64_t {
 
@@ -362,6 +372,8 @@ bool ValkyrieMapper::FixSecurityCookie(void* local_image, ULONG64 kernel_image_b
 		}();
 
 	*(uintptr_t*)(stack_cookie) = new_cookie;
+
+	LOG_SUCCESS("New stack cookie generated successfully.");
 
 	return true;
 }
