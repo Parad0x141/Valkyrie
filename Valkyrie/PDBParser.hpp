@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "Common.hpp"
+#include "Helper.hpp"
 #include <dbghelp.h>
 
 #include "../Valkyrie/External/Json/json.hpp"
@@ -33,16 +34,21 @@ using json = nlohmann::json;
 class PDBParser
 {
 private:
+
 	std::wstring m_SymbolPath;
 	bool m_isInit = false;
 	std::map<std::string, uint64_t> m_moduleBaseAddresses;
 	std::string GetModuleNameByBase(uint64_t baseAddress);
 
 public:
+
 	bool Init();
 	bool LoadModule(const std::string& moduleName, uint64_t baseAddress);
 	std::vector<SymbolData> ParseAllSymbols(const std::string& moduleFilter = "*");
 	json ExportToJson(const std::vector<SymbolData>& symbols);
+
+
+	// Not impl yet
 	bool SaveToFile(const std::string& filename, const std::vector<SymbolData>& symbols);
 
 	~PDBParser();

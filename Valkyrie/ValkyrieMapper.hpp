@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "Common.hpp"
+#include "IntelLoader.hpp"
 
 
 
@@ -33,8 +34,6 @@ enum class AllocationMode
 	AllocateIndependentPages
 };
 
-using Callback = bool(*)(ULONG64* param1, ULONG64* param2, ULONG64 allocationPtr, ULONG64 allocationSize);
-
 
 class ValkyrieMapper
 {
@@ -58,9 +57,9 @@ public:
 		ULONG64 arg1,
 		ULONG64 arg2,
 		BOOL freeMemAfterUse,
+		BOOL wipeHeader,
 		AllocationMode mode,
 		BOOL PassAllocationAddressAsFirstParam,
-		Callback callback,
 		NTSTATUS* exitCode);
 
 };

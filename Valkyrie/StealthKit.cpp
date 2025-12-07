@@ -37,18 +37,199 @@ BOOLEAN StealthKit::EraseServiceKey(const std::wstring& serviceName)
 }
 
 
-BOOLEAN StealthKit::WipeKernelImage(uint64_t base, uint32_t size)
+
+// Total image wipe with random safe code.
+BOOLEAN StealthKit::RewriteKernelCode(uint64_t base, uint32_t size)
 {
     if (!base || !size) return false;
 
-    std::vector<uint8_t> zeros((size + 0xFFF) & ~0xFFF, 0);
+    X64Assembler a;
 
-    m_loader.WriteMemory(base, zeros.data(), static_cast<ULONG>(zeros.size()));
-    std::wcout << L"[+] Kernel image wiped (0x" << std::hex << size << L" bytes)\n";
+    a.SaveNonVolatileRegisters();
+    a.SubRspImm8(0x20);
+    a.XorRaxRax();
+    a.AddRspImm8(0x20);
+    a.RestoreNonVolatileRegisters();
+    a.Ret();
+
+    const auto& safeCode = a.GetBytes();
+    size_t patternSize = safeCode.size();
+
+    if (patternSize == 0)
+        return 0;
+
+    std::vector<uint8_t> fullCode;
+    fullCode.reserve(size);
+
+    for (uint32_t i = 0; i < size; i += static_cast<uint32_t>(patternSize))
+    {
+
+        size_t toCopy = std::min(patternSize, static_cast<size_t>(size - i));
+
+        fullCode.insert(fullCode.end(), safeCode.begin(), safeCode.begin() + toCopy);
+
+    }
+    
+    if (fullCode.size() < static_cast<size_t>(size))
+    {
+        size_t remaining = static_cast<size_t>(size - fullCode.size());
+
+        // Fill remaining with polymorphics NOPs
+        auto nopSlide = a.CreateNopSlide(remaining);
+        fullCode.insert(fullCode.end(), nopSlide.begin(), nopSlide.end());
+
+
+        LOG_SUCCESS("Filling previously allocated kernel memory with random safe opcodes...");
+    }
+
+
+    if (!m_loader.WriteToReadOnlyMemory(base, fullCode.data(), size))
+    {
+        LOG_ERROR("Error, cannot randomize driver data.");
+        return FALSE;
+    }
 
     return TRUE;
 }
 
+
+BOOLEAN StealthKit::ClearMmUnloadedDrivers()
+{
+    LOG_INFO("Clearing MmUnloadedDrivers cache...");
+
+    ULONG lenght = 0;
+    std::vector<uint8_t> buffer;
+    NTSTATUS status;
+
+    do
+    {
+        buffer.resize(lenght);
+        status = NtQuerySystemInformation(
+            SystemExtendedHandleInformation,
+            buffer.data(),
+            static_cast<ULONG>(buffer.size()),
+            &lenght);
+
+    } while (status == STATUS_INFO_LENGTH_MISMATCH);
+
+    if (!NT_SUCCESS(status))
+    {
+        std::wcout << L"[!] NtQuerySystemInformation failed 0x" << std::hex << status << L'\n';
+        return false;
+    }
+
+    const auto* info = reinterpret_cast<const SYSTEM_HANDLE_INFORMATION_EX*>(buffer.data());
+    LOG_INFO("Total handles : " << info->NumberOfHandles);
+
+    uint64_t object = 0;
+    for (ULONG_PTR i = 0; i < info->NumberOfHandles; ++i)
+    {
+        const auto& h = info->Handles[i];
+        if (reinterpret_cast<HANDLE>(h.UniqueProcessId) == UlongToHandle(GetCurrentProcessId()))
+        {
+            //std::wcout << L"[DEBUG] PID match, handle value: 0x" << std::hex << h.HandleValue
+               // << L" vs hIntelDriver: 0x" << m_loader.GetHandle() << L'\n';
+            if (reinterpret_cast<HANDLE>(h.HandleValue) == m_loader.GetHandle())
+            {
+                object = reinterpret_cast<uint64_t>(h.Object);
+             //   std::wcout << L"[DEBUG] Handle found, Object = 0x" << object << L'\n';
+                break;
+            }
+        }
+    }
+
+    if (!object)
+    {
+        std::wcout << L"[!] Intel driver handle not found in table\n";
+        return false;
+    }
+
+    auto read64 = [this](uint64_t addr, uint64_t& out)
+        {
+            return m_loader.ReadMemory(addr, &out, sizeof(out)) && out != 0;
+        };
+
+    uint64_t devObj = 0, drvObj = 0, drvSec = 0;
+    if (!read64(object + 0x8, devObj)) {
+        std::wcout << L"[!] devObj fail\n";
+        return false;
+    }
+    if (!read64(devObj + 0x8, drvObj)) {
+        std::wcout << L"[!] drvObj fail\n";
+        return false;
+    }
+    if (!read64(drvObj + 0x28, drvSec)) {
+        std::wcout << L"[!] drvSec fail\n";
+        return false;
+    }
+
+
+    UNICODE_STRING originalUs = { 0 };
+    if (!m_loader.ReadMemory(drvSec + 0x58, &originalUs, sizeof(originalUs)))
+    {
+        std::wcout << L"[!] Failed to read UNICODE_STRING\n";
+        return false;
+    }
+
+    if (originalUs.Length == 0 && originalUs.Buffer == nullptr)
+    {
+        std::wcout << L"[+] UNICODE_STRING already cleaned?! Probably the Ghost in the machine...\n";
+        return true;
+    }
+
+    std::wstring driverName;
+    if (originalUs.Length > 0 && originalUs.Buffer != nullptr)
+    {
+        driverName.resize(originalUs.Length / sizeof(wchar_t));
+        if (m_loader.ReadMemory(reinterpret_cast<uintptr_t>(originalUs.Buffer),
+            driverName.data(), originalUs.Length))
+        {
+           // std::wcout << L"[DEBUG] Driver name: " << driverName << L'\n';
+        }
+    }
+
+
+    UNICODE_STRING emptyUs = { 0, 0, nullptr };
+
+    // Overwrite the struct
+    if (!m_loader.WriteMemory(drvSec + 0x58, &emptyUs, sizeof(emptyUs)))
+    {
+        std::wcout << L"[!] Failed to write empty UNICODE_STRING\n";
+        return false;
+    }
+
+    // Now zeroing the buffer too ti be extra clean
+    if (originalUs.Buffer && originalUs.MaximumLength > 0)
+    {
+
+        std::vector<wchar_t> zeroBuffer(originalUs.MaximumLength / sizeof(wchar_t), 0);
+
+
+        m_loader.WriteMemory(reinterpret_cast<uintptr_t>(originalUs.Buffer),
+            zeroBuffer.data(), originalUs.MaximumLength);
+
+       // std::wcout << L"[DEBUG] Zeroed buffer of size: " << originalUs.MaximumLength << L'\n';
+    }
+
+    // Checking
+    UNICODE_STRING verifyUs = { 0 };
+    if (m_loader.ReadMemory(drvSec + 0x58, &verifyUs, sizeof(verifyUs)))
+    {
+        if (verifyUs.Length == 0 && verifyUs.Buffer == nullptr)
+        {
+            LOG_SUCCESS("MmUnloadDriver cache cleared & UNICODE_STRING zeroed successfully.");
+        }
+        else
+        {
+            std::wcout << L"[!] Verification failed - string not cleared!\n";
+            std::wcout << L"[!] Length: " << verifyUs.Length
+                << L", Buffer: 0x" << std::hex << verifyUs.Buffer << std::dec << L'\n';
+            return false;
+        }
+    }
+
+    return true;
+}
 
 
 // Full of sketchy cast because of the way we read/write kernel memory remotely...
@@ -219,6 +400,7 @@ void StealthKit::EnumeratePiDDBCache()
 }
 
 
+
 // -----------------------------------------------------------------------
 // WARNING: UGLY NESTED IFS AHEAD!
 // 
@@ -262,15 +444,14 @@ ValkStatus StealthKit::ClearCIHashTable()
     if (!m_loader.ExAcquireResourceExclusiveLite(g_Lock, true))
         return ValkStatus::ERR_LOCK_FAILED;
 
-	// Might need to get fixed later since we gonna also randomize driver path.
     const std::wstring targetName = m_loader.GetDriverName();  // "iqvw64e.sys"
     const std::wstring targetPath = m_loader.GetDriverPath();  // "C:\Users\...\Temp\iqvw64e.sys"
 
     const size_t targetBytes = (targetPath.length() - 2) * sizeof(wchar_t);
 
-    LOG_SUCCESS(L"Target name: " + targetName);
-    LOG_SUCCESS(L"Target path: " + targetPath);
-    LOG_SUCCESS_HEX("Target bytes", targetBytes);
+    //LOG_SUCCESS(L"Target name: " + targetName);
+    //LOG_SUCCESS(L"Target path: " + targetPath);
+    //LOG_SUCCESS_HEX("Target bytes", targetBytes);
 
     uintptr_t prev = (uintptr_t)g_BucketList;
     uintptr_t curr = 0;
@@ -293,7 +474,7 @@ ValkStatus StealthKit::ClearCIHashTable()
 
     while (curr)
     {
-        LOG_SUCCESS_HEX("[CI] scanning entry", curr);
+       // LOG_SUCCESS_HEX("scanning entry", curr);
 
         USHORT len = 0;
         if (!m_loader.ReadMemory(curr + offsetof(HashBucketEntry, DriverName.Length), &len, sizeof(len)))
@@ -301,7 +482,7 @@ ValkStatus StealthKit::ClearCIHashTable()
             LOG_ERROR("failed to read Length");
             break;
         }
-        LOG_SUCCESS_HEX("Length", len);
+       // LOG_SUCCESS_HEX("Length", len);
 
         uintptr_t bufferAddr = 0;
         if (!m_loader.ReadMemory(curr + offsetof(HashBucketEntry, DriverName.Buffer), &bufferAddr, sizeof(bufferAddr)))
@@ -321,15 +502,14 @@ ValkStatus StealthKit::ClearCIHashTable()
                 name[charCount] = L'\0';
                 std::wstring_view sv(name.get(), charCount);
 
-                LOG_SUCCESS(L"name: " + std::wstring(sv));
+             //   LOG_SUCCESS(L"name: " + std::wstring(sv));
 
                 if (len == targetBytes)
                 {
-                    LOG_SUCCESS(">>> LENGTH MATCH!");
 
                     if (sv.find(targetName) != std::wstring_view::npos)
                     {
-                        LOG_SUCCESS(">>> EXACT MATCH !");
+                        LOG_SUCCESS("Found a match !");
 
                         uintptr_t next = 0;
                         if (!m_loader.ReadMemory(curr, &next, sizeof(next)))
@@ -337,7 +517,7 @@ ValkStatus StealthKit::ClearCIHashTable()
                             LOG_ERROR("failed to read Next");
                             break;
                         }
-                        LOG_SUCCESS_HEX("Next entry", next);
+                       // LOG_SUCCESS_HEX("Next entry", next);
 
                         if (!m_loader.WriteMemory(prev, &next, sizeof(next)))
                         {
@@ -351,7 +531,7 @@ ValkStatus StealthKit::ClearCIHashTable()
                             break;
                         }
 
-                        LOG_SUCCESS("entry unlinked + freed");
+                        LOG_SUCCESS("Entry unlinked + freed");
                         m_loader.ExReleaseResourceLite(g_Lock);
                         return ValkStatus::OK;
                     }

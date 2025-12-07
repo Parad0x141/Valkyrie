@@ -51,6 +51,7 @@
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
+    <EnableASAN>true</EnableASAN>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -120,6 +121,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -128,8 +130,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="DebugTools.cpp" />
+    <ClCompile Include="Experimental.cpp" />
     <ClCompile Include="Helpers.cpp" />
     <ClCompile Include="IntelLoader.cpp" />
+    <ClCompile Include="KResolver.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="PatternScanner.cpp" />
     <ClCompile Include="PDBParser.cpp" />
@@ -141,22 +145,22 @@
     <ClInclude Include="Args.hpp" />
     <ClInclude Include="Common.hpp" />
     <ClInclude Include="DebugTools.hpp" />
+    <ClInclude Include="Experimental.hpp" />
     <ClInclude Include="Helper.hpp" />
+    <ClInclude Include="Init.hpp" />
     <ClInclude Include="IntelDriver.hpp" />
     <ClInclude Include="IntelLoader.hpp" />
+    <ClInclude Include="KResolver.hpp" />
     <ClInclude Include="PatternScanner.hpp" />
     <ClInclude Include="PDBParser.hpp" />
     <ClInclude Include="PEUtils.hpp" />
-    <ClInclude Include="SigResolver.hpp" />
     <ClInclude Include="SigTable.hpp" />
     <ClInclude Include="StealthKit.hpp" />
+    <ClInclude Include="ValkLogger.hpp" />
     <ClInclude Include="ValkStatus.hpp" />
     <ClInclude Include="ValkyrieMapper.hpp" />
     <ClInclude Include="Win.hpp" />
     <ClInclude Include="X64Assembler.hpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <Text Include="TODO.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

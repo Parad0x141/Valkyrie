@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "Common.hpp"
+#include "IntelLoader.hpp"
 
 
 
@@ -59,4 +60,5 @@ namespace PEUtils
     uint64_t GetModuleBaseAddress(const char* moduleName);
     std::vector<BYTE> ReadFileByte(const std::wstring& filePath);
     std::vector<uint8_t> ReadFile(const std::wstring& filePath);
+    VOID ShowPEDetails(const PEImage& pe, std::wstring driverName);
 }

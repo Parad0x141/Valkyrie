@@ -1,68 +1,99 @@
-﻿#include "Common.hpp"
+﻿#pragma once
 
+#include "Common.hpp"
+#include <filesystem>
 
 struct Args
 {
-    std::wstring driverSysPath;
-    bool clean;
-    bool isPersistent;
-    bool showHelp;
+    std::wstring driverPath;
+    std::wstring DriverName() const;
 
+    bool help = false;
+    bool noStealth = false;
+    bool freeMemory = false;
+    bool scrambleHeader = false;
+    bool deepWipe = false;
 };
 
-[[nodiscard]] Args ParseArgs(int argc, wchar_t* argv[])
+std::wstring Args::DriverName() const
+{
+    if (driverPath.empty()) return L"";
+    return std::filesystem::path(driverPath).filename().wstring();
+}
+
+Args ParseArgs(int argc, wchar_t* argv[]);
+
+
+// Auto doc
+static void PrintHelp()
+{
+    LOG_WARNING(L"Usage: Valkyrie.exe [options] <MyEvilDriver.sys>");
+    LOG_WARNING(L"Options :");
+    LOG_INFO(L"  -h  --help           Show this help");
+    LOG_INFO(L"  -n  --noStealth      Do not erase Intel driver traces after mapping (Only delete driver file)");
+    LOG_INFO(L"  -f  --freeMemory     Free memory after driver entry call (One-shot driver)");
+    LOG_INFO(L"  -s  --scrambleHeader Scramble PE headers before mapping");
+    LOG_INFO(L"  -d  --deepWipe       Write random safes opcodes in previously allocated driver memory");
+}
+
+Args ParseArgs(int argc, wchar_t* argv[])
 {
     Args a;
-	a.clean = false;
-	a.isPersistent = false;
-	a.showHelp = false;
 
-    auto Next = [&](int i) -> std::optional<std::wstring>
-        {
-            if (i + 1 < argc) return argv[i + 1];
-            return std::nullopt;
-        };
+    struct Flag { const wchar_t* longFlag; const wchar_t* shortFlag; bool* target; };
+   
+    static Flag flags[] = {
+        { L"--help",               L"-h", &a.help},
+        { L"--noStealth",          L"-n", &a.noStealth},
+        { L"--freeMemory",         L"-f", &a.freeMemory},
+        { L"--scrambleHeader",     L"-s", &a.scrambleHeader},
+        { L"--deepWipe",           L"-d", &a.deepWipe},
+    };
 
     for (int i = 1; i < argc; ++i)
     {
         const std::wstring arg = argv[i];
 
-        if (arg.starts_with(L"-"))         
+        bool found = false;
+
+        for (const auto& f : flags)
         {
-      
-            if (arg == L"-h" || arg == L"--help") { a.showHelp = true; continue; }
-
-           
-            if (arg == L"-c" || arg == L"--clean") { a.clean = true; continue; }
-
-            
-            if (arg == L"-u" || arg == L"--unmap") { a.isPersistent = true; continue; }
-
-            
-            if (arg == L"-l" || arg == L"--load")
-            {
-                if (auto path = Next(i)) { a.driverSysPath = *path; ++i; continue; }
-                std::wcerr << L"Error: --load requires <file>\n";
-                a.showHelp = true;
-                break;
-            }
-
-            
-            std::wcerr << L"Unknown flag: " << arg << L'\n';
-            a.showHelp = true;
-            break;
+            if (arg == f.longFlag || arg == f.shortFlag) { *f.target = true; found = true; break; }
         }
-        else if (a.driverSysPath.empty())
+        if (found) continue;
+
+        if (arg == L"/?" || arg == L"-?") { a.help = true; continue; }
+
+        if (arg.starts_with(L"-"))
         {
-
-            a.driverSysPath = arg;
+            LOG_ERROR(L"Unknown flag : " << arg << L"  (see -h)");
+            a.help = true; return a;
         }
-        else
+        if (!a.driverPath.empty())
         {
-            std::wcerr << L"Error: extra argument \"" << arg << L"\"\n";
-            a.showHelp = true;
-            break;
+            LOG_ERROR(L"Extra argument : " << arg);
+            a.help = true; return a;
         }
+        a.driverPath = arg;
     }
+
+    if (a.driverPath.empty() && !a.help)
+    {
+        LOG_ERROR(L"No driver file provided");
+        a.help = true;
+    }
+
+
+    if (!a.driverPath.empty())
+    {
+        if (!std::filesystem::exists(a.driverPath))
+        {
+            LOG_ERROR(L"File not found : " << a.driverPath);
+            a.help = true;
+        }
+        else if (!a.driverPath.ends_with(L".sys"))
+            LOG_WARNING(L"Extension not .sys, continue anyway");
+    }
+
     return a;
 }

@@ -2,7 +2,6 @@
 #include "Common.hpp"
 
 constexpr ULONG MAX_IMG_NOTIFY = 64;
-
 constexpr auto SystemExtendedHandleInformation = static_cast<SYSTEM_INFORMATION_CLASS>(64);
 
 
@@ -95,3 +94,18 @@ typedef struct _HashBucketEntry
     UNICODE_STRING DriverName;
     ULONG CertHash[5];
 } HashBucketEntry, * PHashBucketEntry;
+
+#pragma pack(push,1)
+typedef struct _KLDR_DATA_TABLE_ENTRY 
+{
+    LIST_ENTRY InLoadOrderLinks;           // target to unlink
+    LIST_ENTRY InMemoryOrderLinks;
+    LIST_ENTRY InInitializationOrderLinks;
+    PVOID DllBase;
+    PVOID EntryPoint;
+    ULONG SizeOfImage;
+    UNICODE_STRING FullDllName;            //  "\??\C:\Temp\iqvw64e.sys"
+    UNICODE_STRING BaseDllName;            //  "iqvw64e.sys"
+    // ...
+} KLDR_DATA_TABLE_ENTRY, * PKLDR_DATA_TABLE_ENTRY;
+#pragma pack(pop)

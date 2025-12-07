@@ -8,7 +8,7 @@
 #ifdef __INTELLISENSE__ 
 #pragma diag_suppress 2904
 #endif
-	
+
 
 namespace SigTable
 {
@@ -20,8 +20,6 @@ namespace SigTable
 		const char* bytes;
 		const char* mask;
 		uint8_t callOffset;
-		uint8_t offsetPosition;
-		uint8_t instructionSize;
 	};
 
 	namespace NT

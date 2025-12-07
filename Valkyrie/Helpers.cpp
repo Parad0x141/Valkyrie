@@ -1,6 +1,5 @@
-﻿#include "Common.hpp"
-
-
+﻿#include "Helper.hpp"
+#include <filesystem>
 
 BOOL IsAdmin()
 {
@@ -21,7 +20,7 @@ BOOL IsAdmin()
 }
 
 
-BOOL WriteDriver()
+BOOL WriteDriverFile()
 {
     WCHAR tempPath[MAX_PATH];
     GetTempPathW(MAX_PATH, tempPath);
@@ -65,8 +64,26 @@ BOOL WriteDriver()
     return TRUE;
 }
 
+BOOL ConfirmYesNo(const std::wstring& question)
+{
+    std::wcout << question << L" (y/n) : " << std::flush;
+    wchar_t ans = L'n';
+    std::wcin >> ans;
+    std::wcin.ignore(std::numeric_limits<std::streamsize>::max(), L'\n');
+    return (ans == L'y' || ans == L'Y');
+}
 
-VOID PrintSyscalls()
+VOID* GetNtdllExport(const char* functionName)
+{
+    static HMODULE ntdll = []() {return GetModuleHandleA("ntdll.dll"); }();
+    if (!ntdll)
+        return nullptr;
+
+
+    return GetProcAddress(ntdll, functionName);
+}
+
+VOID EnumerateSyscalls()
 {
     std::string path = "C:\\Windows\\System32\\ntoskrnl.exe";
 
@@ -94,6 +111,15 @@ VOID PrintSyscalls()
 
 }
 
+VOID DumpBytes(const char* name, uint8_t* bytes, size_t len)
+{
+    std::cout << name << " : ";
+    for (size_t i = 0; i < len; ++i)
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)bytes[i] << ' ';
+    std::cout << '\n';
+}
+
+
 
 ULONG GetPETimeStamp(const std::wstring& path)
 {
@@ -104,14 +130,6 @@ ULONG GetPETimeStamp(const std::wstring& path)
     return nt->FileHeader.TimeDateStamp;
 }
 
-ULONG GetIntelTimeStamp()
-{
-    WCHAR temp[MAX_PATH];
-    GetTempPathW(MAX_PATH, temp);
-    std::wstring path = std::wstring(temp) + L"iqvw64e.sys";
-
-    return GetPETimeStamp(path);
-}
 
 BOOL DeleteDriverFile()
 {
@@ -121,7 +139,7 @@ BOOL DeleteDriverFile()
 
     if (DeleteFileW(driverPath.c_str()))
     {
-        std::wcout << L"[+] Driver deleted: " << driverPath << L"\n";
+        LOG_SUCCESS("Driver file deleted successfully.");
         return TRUE;
     }
     else
@@ -164,3 +182,10 @@ std::string GetCurrentTimestamp()
     auto now = std::chrono::system_clock::now();
     return std::format("{:%Y-%m-%d %H:%M:%S}", now);
 }
+
+std::string WStringToString(const std::wstring& w)
+{
+    return std::filesystem::path(w).string();
+}
+
+std::wstring ToHexW(uint64_t v) { return L"0x" + std::to_wstring(v); }

@@ -1,4 +1,5 @@
 ﻿#include "ValkyrieMapper.hpp"
+#include "StealthKit.hpp"
 
 PIMAGE_NT_HEADERS64 ValkyrieMapper::GetNtHeadersValk(void* image_base) 
 {
@@ -138,8 +139,8 @@ bool ValkyrieMapper::ResolveImports(const vec_imports imports)
 
 
 
-ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2, BOOL freeMemAfterUse,
-    AllocationMode mode, BOOL PassAllocationAddressAsFirstParam, Callback callback, NTSTATUS* exitCode)
+ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2, BOOL freeMemAfterUse, BOOL wipeHeader,
+    AllocationMode mode, BOOL PassAllocationAddressAsFirstParam,NTSTATUS* exitCode)
 {
     void* localBase = VirtualAlloc(nullptr, drvImage.imageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!localBase)
@@ -204,8 +205,23 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 		LOG_ERROR("WriteMemory failed");
 	}
 
+	if (wipeHeader)
+	{
+		LOG_INFO("Scrambling driver header before mapping...");
+		uint32_t headerSize = drvImage.ntHeaders->OptionalHeader.SizeOfHeaders;
+		
+		auto junkBytes = X64Assembler::CreateNopSlide(headerSize);
+
+		if (!m_loader.WriteMemory(kernelBase, junkBytes.data(), headerSize))
+		{
+			LOG_ERROR("Error, cannot write junkbytes into driver header.");
+		}
+		else
+			LOG_SUCCESS_HEX("Scrambled bytes : ", headerSize);
+	}
+
 	// Fixing protection
-	LOG_SUCCESS("Fixing protection...");
+	LOG_INFO("Fixing sections permissions...");
 
 	for (const auto& sec : drvImage.sections)
 	{
@@ -259,24 +275,27 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 			return 0;
 		}
 
-		LOG_SUCCESS_HEX("DriverEntry returned", status);
 
 		if (exitCode)
 			*exitCode = status;
 
-			if (callback)
-			{
-				callback(&arg1, &arg2, kernelBase, drvImage.imageSize);
-			}
 	}
 
 	VirtualFree(localBase, 0, MEM_RELEASE);
 
 	if (freeMemAfterUse)
 	{
-		LOG_SUCCESS("Freeing kernel pages...");
-		m_loader.MmFreeIndependentPages(kernelBase, allocSize);
-		return 0; // Driver unloaded
+		LOG_INFO("Freeing kernel pages...");
+
+		if (!m_loader.MmFreeIndependentPages(kernelBase, allocSize))
+		{
+			LOG_ERROR("Error, cannot free driver allocated pages !");
+			return 1;
+		}
+
+		LOG_SUCCESS("Successfully unallocated pages.");
+			
+		return 0; // Driver unloaded, pages are free.
 	}
 
 	LOG_SUCCESS("Driver successfully loaded and persistent");
@@ -314,7 +333,7 @@ bool ValkyrieMapper::FixSecurityCookie(void* local_image, ULONG64 kernel_image_b
 	if (!stack_cookie)
 	{
 		LOG_SUCCESS("StackCookie not defined, fix cookie skipped");
-		return true; // Normal behavior
+		return true; // Normal behavior if the driver wasn't built with /GS
 	}
 
 

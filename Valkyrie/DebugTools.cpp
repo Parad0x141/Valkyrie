@@ -150,50 +150,7 @@ namespace DebugTools
         VirtualFree(export_data, 0, MEM_RELEASE);
     }
 
-    void TestKernelMemAPI(IntelLoader& loader)
-    {
-        constexpr uint32_t MAGIC = 0xDEAD1337;
-
-        std::wcout << L"[+] Test MmAllocateIndependentPagesEx(0x1000)\n";
-        uint64_t base = loader.MmAllocateIndependentPagesEx(MAGIC);
-        if (!base) { std::wcout << L"[-] alloc failed\n"; return; }
-        std::wcout << L"[+] allocated at 0x" << std::hex << base << std::dec << L'\n';
-
-        std::wcout << L"[+] Test MmSetPageProtection(RWX)\n";
-        BOOLEAN ok = loader.MmSetPageProtection(base, MAGIC, PAGE_EXECUTE_READWRITE);
-        std::wcout << (ok ? L"[+] protect OK\n" : L"[-] protect failed\n");
-
-        
-        uint8_t pattern = 0xCC;
-        if (loader.WriteMemory(base, &pattern, sizeof(pattern)))
-            std::wcout << L"[+] write byte OK\n";
-        else
-            std::wcout << L"[-] write failed\n";
-
-        std::wcout << L"[+] Test MmFreeIndependentPages\n";
-        BOOLEAN free = loader.MmFreeIndependentPages(base, MAGIC);
-        std::wcout << (free ? L"[+] free OK\n" : L"[-] free failed\n");
-    }
-
-    VOID TestBestCandidates(IntelLoader& loader) 
-    {
-        const char* candidates[] = {""};
-
-        uint64_t kernelBase = loader.GetNtoskrnlBaseAddress();
-
-        printf("Checking sysgate candidates...\n");
-        for (int i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) 
-        {
-            uint64_t kernelAddrNt = loader.GetKernelModuleExport(kernelBase, candidates[i]);
-            std::string zwName = "Zw" + std::string(candidates[i] + 2);
-            uint64_t kernelAddrZw = loader.GetKernelModuleExport(kernelBase, zwName.c_str());
-
-            printf("%-25s: Nt=0x%p, Zw=0x%p\n",
-                candidates[i], (void*)kernelAddrNt, (void*)kernelAddrZw);
-        }
-    }
-
-
+   
     VOID AnalyzePrologues(IntelLoader& loader)
     {
         const char* candidates[] = {""};

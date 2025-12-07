@@ -2,6 +2,7 @@
 #pragma once
 
 #include "Common.hpp"
+#include "IntelLoader.hpp"
 #include <map>
 #include <immintrin.h>
 #include <emmintrin.h>

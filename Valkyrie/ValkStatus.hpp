@@ -1,5 +1,4 @@
 ﻿#pragma once
-#include <cstdint>
 
 enum class ValkStatus : uint32_t
 {
