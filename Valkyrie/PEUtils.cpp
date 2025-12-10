@@ -37,7 +37,7 @@ namespace PEUtils
 			}
 		}
 
-		LOG_ERROR(L"Module not found : " << std::wstring(moduleName, moduleName + strlen(moduleName)));
+		LOG_ERROR("Module not found : " << std::wstring(moduleName, moduleName + strlen(moduleName)));
 		return 0;
 	}
 
@@ -174,6 +174,7 @@ namespace PEUtils
 			else
 			{
 				LOG_ERROR("Invalid relocation data directory.");
+				return nullptr;
 			}
 		}
 		else
@@ -185,7 +186,9 @@ namespace PEUtils
 		auto& importDir = peImage->ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
 		if (!importDir.Size || !importDir.VirtualAddress)
 		{
+			// Should fail, a driver not importing anything is odd.
 			LOG_ERROR("No imports found in PE.");
+			return nullptr;
 		}
 		else
 		{
@@ -280,7 +283,7 @@ import.ordinals.push_back(0);
 		}
 
 		auto& tlsDir = peImage->ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS];
-		if (tlsDir.Size) std::wcout << L"[!] Driver has TLS callbacks, TLS callbacks are NOT supported.\n";
+		if (tlsDir.Size) LOG_WARNING("Driver has TLS callback, this is NOT supported by Valkyrie !");
 
 		auto& excDir = peImage->ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
 		if (excDir.Size) std::wcout << L"[+] Exception directory: " << excDir.Size << L" bytes\n";
@@ -373,7 +376,7 @@ import.ordinals.push_back(0);
 
 		if (!file.is_open())
 		{
-			LOG_ERROR("Error, failed to read file.");
+			LOG_ERROR("Failed to read file.");
 			return {};
 		}
 
@@ -383,7 +386,7 @@ import.ordinals.push_back(0);
 		std::vector<uint8_t> buffer(size);
 		if (!file.read((char*)buffer.data(), size))
 		{
-			LOG_ERROR("Error, failed to read file.");
+			LOG_ERROR("Failed to read file.");
 		}
 
 		LOG_SUCCESS("Read " << size << L" bytes from " << filePath);

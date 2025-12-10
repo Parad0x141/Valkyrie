@@ -28,7 +28,7 @@ inline void Splash()
 
 	std::cout << "\n";
 	std::cout << style::bold
-		<< "               Valkyrie Kernel Driver Mapper v0.2.1 by Parad0x141\n"
+		<< "               Valkyrie Kernel Driver Mapper v0.3 by Parad0x141\n"
 		<< style::reset << std::endl;
 }
 

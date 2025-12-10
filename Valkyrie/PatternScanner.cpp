@@ -1,5 +1,6 @@
 ﻿#include "PatternScanner.hpp"
 
+// TODO : Change workflow to use all scanners and make sure to not miss/misread patterns.
 
 uintptr_t PatternScanner::FindPattern(
     uintptr_t moduleBase,
@@ -45,7 +46,7 @@ uintptr_t PatternScanner::FindPattern(
 
     // Scan
     uintptr_t hit = 0;
-    if (secSize > 4 * 1024 * 1024)
+    if (false)
     {
         hit = ScanChunked(secStart, secSize, pattern, mask, maskLen);
     }
@@ -116,6 +117,59 @@ uintptr_t PatternScanner::FindPatternMulti(
     return 0;
 }
 
+
+// "Dumb" scanner to fix chunks edge issue and such.
+uintptr_t PatternScanner::FindPatternRaw(uintptr_t moduleBase, const char* sectionName, const BYTE* pattern, const char* mask, bool useCache)
+{
+    size_t maskLen = strlen(mask);
+    if (!moduleBase || !sectionName || !pattern || !mask || maskLen == 0)
+        return 0;
+
+    // Cache
+    std::string key;
+    if (useCache)
+    {
+        key = CacheKey(moduleBase, sectionName, pattern, mask);
+        uintptr_t cached;
+        if (TryCache(key, cached)) return cached;
+    }
+
+    // Get section
+    IMAGE_DOS_HEADER dos;
+    IMAGE_NT_HEADERS64 nt;
+    IMAGE_SECTION_HEADER sec;
+
+    if (!ValidateDOS(moduleBase, dos) ||
+        !ValidateNT(moduleBase, dos.e_lfanew, nt) ||
+        !GetSection(moduleBase, nt, sectionName, sec))
+        return 0;
+
+    uintptr_t secStart = moduleBase + sec.VirtualAddress;
+    size_t secSize = sec.Misc.VirtualSize ? sec.Misc.VirtualSize : sec.SizeOfRawData;
+
+    if (secSize < maskLen) return 0;
+
+    std::unique_ptr<BYTE[]> buf(new (std::nothrow) BYTE[secSize]);
+    if (!buf || !m_loader.ReadMemory(secStart, buf.get(), secSize))
+        return 0;
+
+    
+    uintptr_t hit = ScanNaive(buf.get(), secSize, pattern, mask, maskLen);
+    if (hit != 0) hit += secStart;
+
+    if (useCache && hit) AddCache(key, hit);
+
+    return hit;
+}
+
+uintptr_t PatternScanner::FindPatternRange(uintptr_t start, size_t len, const BYTE* pat, const char* mask)
+{
+    std::unique_ptr<BYTE[]> buf(new (std::nothrow) BYTE[len]);
+    if (!buf || !m_loader.ReadMemory(start, buf.get(), len)) return 0;
+
+    uintptr_t off = ScanNaive(buf.get(), len, pat, mask, strlen(mask));
+    return off ? start + off : 0;
+}
 
 bool PatternScanner::ValidateDOS(uintptr_t base, IMAGE_DOS_HEADER& out) const 
 {

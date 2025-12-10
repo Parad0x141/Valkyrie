@@ -68,6 +68,15 @@ public:
         bool enableSIMD = true
     );
 
+    uintptr_t FindPatternRaw(uintptr_t moduleBase,
+        const char* sectionName,
+        const BYTE* pattern,
+        const char* mask,
+        bool useCache = true);
+
+    uintptr_t FindPatternRange(uintptr_t start, size_t len, const BYTE* pat, const char* mask);
+  
+
     Stats GetStats() const;
     void ClearCache();
     void ClearStats();

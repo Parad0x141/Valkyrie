@@ -42,13 +42,13 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
     <EnableASAN>true</EnableASAN>
@@ -133,11 +133,11 @@
     <ClCompile Include="Experimental.cpp" />
     <ClCompile Include="Helpers.cpp" />
     <ClCompile Include="IntelLoader.cpp" />
-    <ClCompile Include="KResolver.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="PatternScanner.cpp" />
     <ClCompile Include="PDBParser.cpp" />
     <ClCompile Include="PEUtils.cpp" />
+    <ClCompile Include="Resolver.cpp" />
     <ClCompile Include="StealthKit.cpp" />
     <ClCompile Include="ValkyrieMapper.cpp" />
   </ItemGroup>
@@ -150,7 +150,7 @@
     <ClInclude Include="Init.hpp" />
     <ClInclude Include="IntelDriver.hpp" />
     <ClInclude Include="IntelLoader.hpp" />
-    <ClInclude Include="KResolver.hpp" />
+    <ClInclude Include="Resolver.hpp" />
     <ClInclude Include="PatternScanner.hpp" />
     <ClInclude Include="PDBParser.hpp" />
     <ClInclude Include="PEUtils.hpp" />

@@ -5,6 +5,8 @@ constexpr ULONG MAX_IMG_NOTIFY = 64;
 constexpr auto SystemExtendedHandleInformation = static_cast<SYSTEM_INFORMATION_CLASS>(64);
 
 
+struct EX_RUNDOWN_REF { ULONG_PTR Count; };
+
 
 #pragma pack(push, 1)
 typedef struct _SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX
@@ -27,7 +29,6 @@ typedef struct _SYSTEM_HANDLE_INFORMATION_EX
 } SYSTEM_HANDLE_INFORMATION_EX, * PSYSTEM_HANDLE_INFORMATION_EX;
 #pragma pack(pop)
 
-struct EX_RUNDOWN_REF { ULONG_PTR Count; };
 
 typedef struct _RTL_BALANCED_LINKS 
 {
@@ -109,3 +110,25 @@ typedef struct _KLDR_DATA_TABLE_ENTRY
     // ...
 } KLDR_DATA_TABLE_ENTRY, * PKLDR_DATA_TABLE_ENTRY;
 #pragma pack(pop)
+
+struct KernelOffsets
+{
+    // Exported by ntoskrnl.exe
+    UINT64 ExFreePool = 0;
+    UINT64 ExAcquireResourceExclusiveLite = 0;
+    UINT64 ExReleaseResourceLite = 0;
+    UINT64 RtlDeleteElementGenericTableAvl = 0;
+    UINT64 RtlLookupElementGenericTableAvl = 0;
+    UINT64 RtlEnumerateGenericTableWithoutSplayingAvl = 0;
+
+
+    // Resolved by signature
+    UINT64 MmAllocateIndependentPagesEx = 0;
+    UINT64 MmFreeIndependentPages = 0;
+    UINT64 MmSetPageProtection = 0;
+    UINT64 PiDDBCacheTable = 0;
+    UINT64 PiDDBLock = 0;
+    UINT64 CiBucketList = 0;
+    UINT64 CiBucketLock = 0;
+
+};

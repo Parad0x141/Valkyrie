@@ -12,10 +12,10 @@ BOOL WriteDriverFile();
 BOOL DeleteDriverFile();
 BOOL ConfirmYesNo(const std::wstring& question);
 
-
-VOID* GetNtdllExport(const char* functionName);
+PVOID GetNtdllFuncPtr(const char* functioName);
 VOID EnumerateSyscalls();
-VOID DumpBytes(const char* name, uint8_t* bytes, size_t len);
+VOID DumpBytes(const char* name, const uint8_t* bytes, size_t len);
+
 
 uintptr_t FindPattern(uintptr_t dwAddress, uintptr_t dwLen, BYTE* bMask, const char* szMask);
 BOOLEAN bDataCompare(const BYTE* pData, const BYTE* bMask, const char* szMask);

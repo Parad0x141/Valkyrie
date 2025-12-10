@@ -16,9 +16,12 @@ PIMAGE_NT_HEADERS64 ValkyrieMapper::GetNtHeadersValk(void* image_base)
 	return nt_headers;
 }
 
-void ValkyrieMapper::ImageRebase(vec_relocs relocs, const ULONG64 delta) {
-	for (const auto& current_reloc : relocs) {
-		for (auto i = 0u; i < current_reloc.count; ++i) {
+void ValkyrieMapper::ImageRebase(vec_relocs relocs, const ULONG64 delta) 
+{
+	for (const auto& current_reloc : relocs)
+	{
+		for (auto i = 0u; i < current_reloc.count; ++i) 
+		{
 			const uint16_t type = current_reloc.item[i] >> 12;
 			const uint16_t offset = current_reloc.item[i] & 0xFFF;
 
@@ -179,16 +182,16 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 	ImageRebase(GetRelocs(localBase), kernelBase - drvImage.ntHeaders->OptionalHeader.ImageBase);
 	if (!FixSecurityCookie(localBase, kernelBase))
 	{
-		LOG_ERROR("Error, failed to fix security cookie.");
+		LOG_ERROR("Failed to fix security cookie.");
 	}
 	else if(!ResolveImports(GetImports(localBase)))
 	{
-		LOG_ERROR("Error, failed to resolve one or more imports.");
+		LOG_ERROR("Failed to resolve one or more imports.");
 	}
 
 
 	// Page to RW
-	LOG_SUCCESS(L"[DEBUG] MmSetPageProtection(0x" << std::hex << kernelBase
+	LOG_SUCCESS("MmSetPageProtection(0x" << std::hex << kernelBase
 		<< L", 0x" << std::hex << allocSize << L", RW)");
 	if (!m_loader.MmSetPageProtection(kernelBase, allocSize, PAGE_READWRITE))
 	{
@@ -217,7 +220,7 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 
 		if (!m_loader.WriteMemory(kernelBase, junkBytes.data(), headerSize))
 		{
-			LOG_ERROR("Error, cannot write junk bytes into driver header.");
+			LOG_ERROR("Cannot write junk bytes into driver header.");
 		}
 		else
 			LOG_SUCCESS_HEX("Scrambled bytes : ", headerSize);
@@ -256,7 +259,7 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 
 		if (!m_loader.MmSetPageProtection(sectionAddress, sectionSize, prot))
 		{
-			LOG_ERROR(L"Failed to set protection for section " << std::wstring(name, name + strnlen(name, 8)));
+			LOG_ERROR("Failed to set protection for section " << std::wstring(name, name + strnlen(name, 8)));
 		}
 		else
 		{
@@ -268,12 +271,12 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 
 	if (DriverEntryPoint != kernelBase)
 	{
-		LOG_SUCCESS_HEX("Calling DriverEntry at", DriverEntryPoint);
+		LOG_SUCCESS_HEX("Calling driver entrypoint at : ", DriverEntryPoint);
 		NTSTATUS status = 0;
 
 		if (!m_loader.CallKernelFunction(m_loader.GetNtoskrnlBaseAddress(), &status, DriverEntryPoint, arg1, arg2))
 		{
-			LOG_ERROR("DriverEntry call failed");
+			LOG_ERROR("Driver entrypoint call failed");
 			VirtualFree(localBase, 0, MEM_RELEASE);
 			if (freeMemAfterUse)
 				m_loader.MmFreeIndependentPages(kernelBase, allocSize);
@@ -289,14 +292,14 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 	VirtualFree(localBase, 0, MEM_RELEASE);
 
 
-	// Free kernel pages if this a non persistent driver.
+	// Free kernel pages if this is a non persistent driver.
 	if (freeMemAfterUse)
 	{
 		LOG_INFO("Freeing kernel pages...");
 
 		if (!m_loader.MmFreeIndependentPages(kernelBase, allocSize))
 		{
-			LOG_ERROR("Error, cannot free driver allocated pages !");
+			LOG_ERROR("Cannot free driver allocated pages !");
 			return 1;
 		}
 
@@ -358,6 +361,7 @@ bool ValkyrieMapper::FixSecurityCookie(void* local_image, ULONG64 kernel_image_b
 
 	JumpLine();
 	LOG_INFO("Security checks done. Generating StackCookie now...");
+	JumpLine();
 
 	auto new_cookie = []() -> uint64_t {
 

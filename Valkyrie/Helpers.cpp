@@ -73,15 +73,26 @@ BOOL ConfirmYesNo(const std::wstring& question)
     return (ans == L'y' || ans == L'Y');
 }
 
-VOID* GetNtdllExport(const char* functionName)
+PVOID GetNtdllFuncPtr(const char* functioName)
 {
-    static HMODULE ntdll = []() {return GetModuleHandleA("ntdll.dll"); }();
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
     if (!ntdll)
+    {
+        LOG_ERROR("Error, unable to get ntdll.dll handle");
         return nullptr;
+    }
 
+    PVOID functionPtr = GetProcAddress(ntdll, functioName);
+    if (!functionPtr)
+    {
+        LOG_ERROR("Error, unable to get function pointer to function : " << functioName);
+        CloseHandle(ntdll);
+        return nullptr;
+    }
 
-    return GetProcAddress(ntdll, functionName);
+    return functionPtr;
 }
+
 
 VOID EnumerateSyscalls()
 {
@@ -111,14 +122,15 @@ VOID EnumerateSyscalls()
 
 }
 
-VOID DumpBytes(const char* name, uint8_t* bytes, size_t len)
+void DumpBytes(const char* name, const uint8_t* bytes, size_t len)
 {
-    std::cout << name << " : ";
+    std::wstringstream oss;
+    oss << std::hex << std::setfill(L'0');
     for (size_t i = 0; i < len; ++i)
-        std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)bytes[i] << ' ';
-    std::cout << '\n';
-}
+        oss << std::setw(2) << static_cast<int>(bytes[i]) << L' ';
 
+    LOG_SUCCESS(std::wstring(name, name + strlen(name)) << L" : " << oss.str());
+}
 
 
 ULONG GetPETimeStamp(const std::wstring& path)

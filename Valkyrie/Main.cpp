@@ -1,13 +1,11 @@
-﻿// Code by Cyril "Parad0x141" Bouvier - 2025  Valkyrie v0.2.1
+﻿// Code by Cyril "Parad0x141" Bouvier - 2025  Valkyrie v0.3
 
-// This is a work in progress even if the most of the main features are impl and working,
-// you can map drivers right now :)
-
-// Stealth kit is not complete yet.
+// This is a work in progress even if the most of the main features are impl and working.
 
 
 // Valkyrie is a clean and complete rewrite of KDMapper by TheCruz
 // with added stealth features & various code/features improvements by Parad0x141
+
 // Original KDMapper repo -> https://github.com/TheCruZ/kdmapper Many thanks to TheCruz for sharing his work <3
 
 
@@ -19,28 +17,55 @@
 #include "StealthKit.hpp"
 #include "DebugTools.hpp"
 #include "Init.hpp"
+#include "Resolver.hpp"
+#include "Experimental.hpp"
 
+// Workflow will change to :
+
+// [1 -> Setup]
+
+//1. Load Intel driver
+//2. Early offsets resolve
+//3. Offsets validation
+//4. if(failed) -> cleanup
+
+// [2 -> Operations]
+
+// 5. Map driver(using offset cache)
+// 6. (PiDDB, CI, etc.)
+// 7. Unload driver
+// 8. Misc cleanup (ETW restore...)
+
+// Make more sense and will be way more stable like this.
 
 
 
 static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMapper& mapper, Args& args)
 {
-	// Intel driver
+	// Intel driver timestamp
 	ULONG timestamp = GetPETimeStamp(loader.GetDriverPath());
+
+	// User driver path
 	std::string narrowedPath = WStringToString(args.driverPath);
 
+
+	// Load and validate.
 	auto pe = PEUtils::ParsePE(narrowedPath);
 
 	if (!pe || !PEUtils::ValidateDriverPE(*pe))
 	{
-		LOG_ERROR("Error. invalid driver PE");
+		LOG_ERROR("Invalid driver PE. Aborting.");
 		return;
 	}
 
+	// Optionnaly show PE metas
 	PEUtils::ShowPEDetails(*pe,args.DriverName());  
 
+
+	// Clean if user abort operations.
 	if (!ConfirmYesNo(L"Do you want to map this driver ? "))
 	{
+
 		system("cls");
 		LOG_WARNING("Mapping aborted by user. Cleaning Intel driver traces...");
 		JumpLine();
@@ -55,11 +80,14 @@ static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMappe
 
 		LOG_SUCCESS(L"All operations completed. Press Enter to exit. Farewell !");
 		std::wcin.ignore();
+
 		return;
 	}
 
 
+	system("cls");
 	LOG_INFO("Mapping driver...");
+	JumpLine();
 
 	NTSTATUS exitCode = 0;
 	
@@ -83,6 +111,7 @@ static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMappe
 	LOG_INFO("Cleaning Intel driver traces...");
 	JumpLine();
 
+	// TODO : Encrypt all strings.
 	ValkStatus status = stealthKit.CleanPiDDBCache(L"iqvw64e.sys", timestamp);
 	status = stealthKit.ClearCIHashTable();
 
@@ -111,69 +140,86 @@ int wmain(int argc, wchar_t* arvg[])
 	if (args.help)
 	{
 		PrintHelp();
-		return 0;
+		return EXIT_SUCCESS;
 	}
 
 
 	Splash();
 	JumpLine();
 	std::cout << "Press Enter to continue..." << "\n";
-	std::wcin.get();
+	std::wcin.ignore();
 
 	if (!IsAdmin())
 	{
 		LOG_ERROR("Valkyrie need to be launched as administrator.");
 		std::wcin.ignore();
-		return 1;
+
+		return EXIT_FAILURE;
 	}
 
+	ValkStatus status = ValkStatus::OK;
 
 	IntelLoader loader;
 	loader.SetKernelBaseAddress();
 
+	Resolver resolver(loader);
 
 	ValkyrieMapper mapper(loader);
-	StealthKit stealthKit(loader);
-
-	LOG_INFO(" Dropping driver...\n");
+	
+	LOG_INFO("Dropping driver...\n");
 	if (!WriteDriverFile()) 
 	{
-		std::wcout << L"[-] Failed to write driver\n" << std::flush;
-		return 1;
+		LOG_ERROR("Failed to drop write driver file to disk. Aborting.");
+		return EXIT_FAILURE;
 	}
 
 
 	LOG_INFO("Loading vulnerable driver...\n");
 	if (!loader.LoadVulnDriver())
 	{
-		std::wcout << L"[-] Failed to load driver\n" << std::flush;
+		LOG_ERROR("Failed to load Intel driver. Aborting.");
 		DeleteDriverFile();
-		return 1;
-	}
-
-
-	LOG_INFO("Opening device...");
-	if (!loader.OpenDevice()) 
-	{
-		LOG_ERROR("Failed to open device");
-		loader.UnloadVulnDriver();
-		DeleteDriverFile();
-		return 1;
-	}
-
-
-	uint64_t ntos = PEUtils::GetModuleBaseAddress("ntoskrnl.exe");
-	if (!ntos)
-	{
-		std::wcout << L"[-] Failed to find ntoskrnl.exe\n" << std::flush;
-		loader.UnloadVulnDriver();
-		DeleteDriverFile();
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	
+	LOG_INFO("Opening device...");
+	if (!loader.OpenDevice()) 
+	{
+		LOG_ERROR("Failed to open device. Aborting.");
+		loader.UnloadVulnDriver();
+		DeleteDriverFile();
+		return EXIT_FAILURE;
+	}
+
+
+	if (resolver.ResolveExported() != ValkStatus::OK)
+	{
+		LOG_ERROR("Resolver failed to resolve one or more exported functions. Aborting.");
+	}
+
+	StealthKit stealthKit(loader, resolver.GetOffsets());
+
+
+	resolver.ResolvePatterns();
+	if (!resolver.AllOffsetsResolved())
+	{
+		system("cls");
+		LOG_ERROR("Failed to resolve at least one critical kernel offsets. Aborting.");
+		std::wcin.ignore();
+		return EXIT_FAILURE;
+	}
+
+	LOG_SUCCESS("All kernel offsets successfully resolved, mapper ready.");
+	std::wcin.ignore();
+
+	loader.SetOffsets(resolver.GetOffsets());
+	
 	MapDriver(loader, stealthKit, mapper, args);
 
-	return 0;
+	return EXIT_SUCCESS;
 
-}
+} 
+
+
+

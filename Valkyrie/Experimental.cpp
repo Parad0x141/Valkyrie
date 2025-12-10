@@ -1,4 +1,6 @@
-﻿#include "Common.hpp"
+﻿#include "Experimental.hpp"
+
+#include "Common.hpp"
 #include "IntelLoader.hpp"
 
 
@@ -25,15 +27,12 @@
 // 7. IOCTL cloaking
 //    ???...
 
-// 8. Pool-tag camouflage
-//    – MmAllocateIndependentPagesEx → overwrite pool tag with a random tag
+// 8. Nope.mp4 not gonna allow another memory allocating methode for now. So playing with pool tags
+//    is irrelevant. Maybe later.
 
 // 9. Time-based evasion
 //    – random sleep 0-500 ms between each kernel call → breaks timing signatures
 //    – randomise order : map → wipe → clean → sleep → unload → delete
 
 
-VOID DaysSinceLastBSODEqual0(IntelLoader& loader)
-{
-
-}
+// 10. Sandbox, VM, debugger & hook detection.

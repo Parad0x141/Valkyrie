@@ -7,7 +7,7 @@
 
 namespace DebugTools
 {
-	VOID ListKernelModuleExports(IntelLoader& loader);
+
 	VOID AnalyzePrologues(IntelLoader& loader);
 	VOID ListWinServices();
 
