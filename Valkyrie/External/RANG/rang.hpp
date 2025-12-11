@@ -168,52 +168,34 @@ namespace rang_implementation {
 
     inline bool isMsysPty(int fd) noexcept
     {
-        // Dynamic load for binary compability with old Windows
-        const auto ptrGetFileInformationByHandleEx
-          = reinterpret_cast<decltype(&GetFileInformationByHandleEx)>(
-            GetProcAddress(GetModuleHandle(TEXT("kernel32.dll")),
-                           "GetFileInformationByHandleEx"));
-        if (!ptrGetFileInformationByHandleEx) {
-            return false;
-        }
+        // Dynamic load for binary compatibility with old Windows
+        HMODULE hKernel = GetModuleHandleW(L"kernel32.dll");
+        if (!hKernel) return false;
+
+        const auto ptrGetFileInformationByHandleEx =
+            reinterpret_cast<decltype(&GetFileInformationByHandleEx)>(
+                GetProcAddress(hKernel, "GetFileInformationByHandleEx"));
+        if (!ptrGetFileInformationByHandleEx) return false;
 
         HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
-        if (h == INVALID_HANDLE_VALUE) {
-            return false;
-        }
+        if (h == INVALID_HANDLE_VALUE) return false;
 
-        // Check that it's a pipe:
-        if (GetFileType(h) != FILE_TYPE_PIPE) {
-            return false;
-        }
+        if (GetFileType(h) != FILE_TYPE_PIPE) return false;
 
-        // POD type is binary compatible with FILE_NAME_INFO from WinBase.h
-        // It have the same alignment and used to avoid UB in caller code
         struct MY_FILE_NAME_INFO {
             DWORD FileNameLength;
             WCHAR FileName[MAX_PATH];
         };
 
-        auto pNameInfo = std::unique_ptr<MY_FILE_NAME_INFO>(
-          new (std::nothrow) MY_FILE_NAME_INFO());
-        if (!pNameInfo) {
-            return false;
-        }
+        auto pNameInfo = std::unique_ptr<MY_FILE_NAME_INFO>(new (std::nothrow) MY_FILE_NAME_INFO());
+        if (!pNameInfo) return false;
 
-        // Check pipe name is template of
-        // {"cygwin-","msys-"}XXXXXXXXXXXXXXX-ptyX-XX
-        if (!ptrGetFileInformationByHandleEx(h, FileNameInfo, pNameInfo.get(),
-                                             sizeof(MY_FILE_NAME_INFO))) {
+        if (!ptrGetFileInformationByHandleEx(h, FileNameInfo, pNameInfo.get(), sizeof(MY_FILE_NAME_INFO)))
             return false;
-        }
+
         std::wstring name(pNameInfo->FileName, pNameInfo->FileNameLength / sizeof(WCHAR));
-        if ((name.find(L"msys-") == std::wstring::npos
-             && name.find(L"cygwin-") == std::wstring::npos)
-            || name.find(L"-pty") == std::wstring::npos) {
-            return false;
-        }
-
-        return true;
+        return (name.find(L"msys-") != std::wstring::npos || name.find(L"cygwin-") != std::wstring::npos)
+            && name.find(L"-pty") != std::wstring::npos;
     }
 
 #endif

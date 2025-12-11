@@ -124,6 +124,8 @@ BOOLEAN StealthKit::ClearMmUnloadedDrivers()
     }
 
     const auto* info = reinterpret_cast<const SYSTEM_HANDLE_INFORMATION_EX*>(buffer.data());
+
+    JumpLine();
     LOG_INFO("Total handles : " << info->NumberOfHandles);
 
     uint64_t object = 0;

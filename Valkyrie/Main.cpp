@@ -1,6 +1,10 @@
 ﻿// Code by Cyril "Parad0x141" Bouvier - 2025  Valkyrie v0.3
 
-// This is a work in progress even if the most of the main features are impl and working.
+// Comments are like blood in binaries. A subtle lifeline that reminds you
+// how to keep your code alive.
+ 
+
+// This is a work in progress most of the main features are impl and working.
 
 
 // Valkyrie is a clean and complete rewrite of KDMapper by TheCruz
@@ -134,6 +138,7 @@ static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMappe
 
 
 
+// Entry point
 int wmain(int argc, wchar_t* arvg[])
 {
 
@@ -214,8 +219,8 @@ int wmain(int argc, wchar_t* arvg[])
 		return EXIT_FAILURE;
 	}
 
-	LOG_SUCCESS("All kernel offsets successfully resolved, mapper ready.");
-	std::wcin.ignore();
+	LOG_SUCCESS("All kernel offsets successfully resolved, mapper ready...");
+	Sleep(3000);
 
 	loader.SetOffsets(resolver.GetOffsets());
 	

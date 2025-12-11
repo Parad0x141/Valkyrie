@@ -159,15 +159,16 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
   
     // Allocating kernel pages
     ULONG32 allocSize = (drvImage.imageSize + 0xFFF) & ~0xFFF; // Aligned 0x1000
-    ULONG64 kernelBase = m_loader.MmAllocateIndependentPagesEx(allocSize);
-    if (!kernelBase)
+    ULONG64 DriverBase = m_loader.MmAllocateIndependentPagesEx(allocSize);
+    
+	if (!DriverBase)
     {
         LOG_ERROR("Kernel allocation failed"); 
         VirtualFree(localBase, 0, MEM_RELEASE);
         return 0;
     }
 
-    LOG_SUCCESS_HEX("Kernel base : ", kernelBase);
+    LOG_SUCCESS_HEX("Driver base address : ", DriverBase);
 
 	// sections
 	for (const auto& sec : drvImage.sections)
@@ -180,8 +181,8 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 		memcpy(dst, src, sec.SizeOfRawData);
 	}
 
-	ImageRebase(GetRelocs(localBase), kernelBase - drvImage.ntHeaders->OptionalHeader.ImageBase);
-	if (!FixSecurityCookie(localBase, kernelBase))
+	ImageRebase(GetRelocs(localBase), DriverBase - drvImage.ntHeaders->OptionalHeader.ImageBase);
+	if (!FixSecurityCookie(localBase, DriverBase))
 	{
 		LOG_ERROR("Failed to fix security cookie.");
 	}
@@ -192,19 +193,19 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 
 
 	// Page to RW
-	LOG_SUCCESS("MmSetPageProtection(0x" << std::hex << kernelBase
+	LOG_SUCCESS("MmSetPageProtection(0x" << std::hex << DriverBase
 		<< L", 0x" << std::hex << allocSize << L", RW)");
-	if (!m_loader.MmSetPageProtection(kernelBase, allocSize, PAGE_READWRITE))
+	if (!m_loader.MmSetPageProtection(DriverBase, allocSize, PAGE_READWRITE))
 	{
 		LOG_ERROR("MmSetPageProtection RW failed.");
 	}
 
 
 	// Write to prevously allocated page
-	std::wcout << L"[DEBUG] WriteMemory(0x" << std::hex << kernelBase
+	std::wcout << L"[DEBUG] WriteMemory(0x" << std::hex << DriverBase
 		<< L", 0x" << reinterpret_cast<ULONG64>(localBase)
 		<< L", 0x" << allocSize << L")\n";
-	if (!m_loader.WriteMemory(kernelBase, localBase, allocSize))
+	if (!m_loader.WriteMemory(DriverBase, localBase, allocSize))
 	{
 		LOG_ERROR("WriteMemory failed");
 	}
@@ -220,7 +221,7 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 		
 		auto junkBytes = X64Assembler::CreateNopSlide(headerSize);
 
-		if (!m_loader.WriteMemory(kernelBase, junkBytes.data(), headerSize))
+		if (!m_loader.WriteMemory(DriverBase, junkBytes.data(), headerSize))
 		{
 			LOG_ERROR("Cannot write junk bytes into driver header.");
 		}
@@ -250,7 +251,7 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 			prot = PAGE_READWRITE;
 		}
 
-		ULONG64 sectionAddress = kernelBase + sec.VirtualAddress;
+		ULONG64 sectionAddress = DriverBase + sec.VirtualAddress;
 		ULONG32 sectionSize = (sec.Misc.VirtualSize + 0xFFF) & ~0xFFF; // Aligned
 
 		//LOG_SUCCESS(L"Section : " << std::wstring(name, name + strnlen(name, 8)));
@@ -269,9 +270,9 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 		}
 	}
 
-	ULONG64 DriverEntryPoint = kernelBase + drvImage.ntHeaders->OptionalHeader.AddressOfEntryPoint;
+	ULONG64 DriverEntryPoint = DriverBase + drvImage.ntHeaders->OptionalHeader.AddressOfEntryPoint;
 
-	if (DriverEntryPoint != kernelBase)
+	if (DriverEntryPoint != DriverBase)
 	{
 		LOG_SUCCESS_HEX("Calling driver entrypoint at : ", DriverEntryPoint);
 		NTSTATUS status = 0;
@@ -281,7 +282,7 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 			LOG_ERROR("Driver entrypoint call failed");
 			VirtualFree(localBase, 0, MEM_RELEASE);
 			if (freeMemAfterUse)
-				m_loader.MmFreeIndependentPages(kernelBase, allocSize);
+				m_loader.MmFreeIndependentPages(DriverBase, allocSize);
 			return 0;
 		}
 
@@ -300,7 +301,7 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 		JumpLine();
 		LOG_INFO("Freeing kernel pages...");
 
-		if (!m_loader.MmFreeIndependentPages(kernelBase, allocSize))
+		if (!m_loader.MmFreeIndependentPages(DriverBase, allocSize))
 		{
 			LOG_ERROR("Cannot free driver allocated pages !");
 			return 1;
@@ -312,7 +313,7 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 	}
 
 	LOG_SUCCESS("Driver successfully loaded and persistent.");
-	return kernelBase;
+	return DriverBase;
 
 }
 
