@@ -38,6 +38,7 @@ Valkyrie **generates polymorphic hooks** at runtime to call kernel functions.
 
 ---
 🧬 Syscall Gate Randomization (Coming soon)
+
 No hard-coded gateway.
 Valkyrie picks a random export from a curated list of safe, low-noise ntoskrnl routines, patches its prologue on-the-fly, and funnels execution through it.
 <!-- Screenshot: CallKernelFunction with random chosen export -->
