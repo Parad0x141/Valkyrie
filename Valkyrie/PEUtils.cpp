@@ -502,6 +502,10 @@ import.ordinals.push_back(0);
 			LOG_WARNING(L"No load-config  (no GS)");
 			std::wcout << "\n";
 		}
+
+		LOG_INFO("Press ENTER to continue...");
+		std::wcin.get();
+		
 			
 	}
 }

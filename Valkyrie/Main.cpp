@@ -59,10 +59,14 @@ static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMappe
 	}
 
 	// Optionnaly show PE metas
-	PEUtils::ShowPEDetails(*pe,args.DriverName());  
-
+	if(args.showDriverInfo)
+		PEUtils::ShowPEDetails(*pe,args.DriverName());  
 
 	// Clean if user abort operations.
+
+	system("cls");
+	LOG_INFO("You're about to map : " << args.DriverName());
+	JumpLine();
 	if (!ConfirmYesNo(L"Do you want to map this driver ? "))
 	{
 

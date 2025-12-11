@@ -202,28 +202,31 @@
 
 				uint8_t oriNtAddAtomBytes[12] = { 0 };
 
-				std::wcout << L"[DEBUG] Saving original bytes...\n";
+				LOG_INFO("Saving NtAddAtom original prologue...");
 				if (!ReadMemory(kernel_NtAddAtom, &oriNtAddAtomBytes, 12))
 				{
-					std::wcout << L"[ERROR] Error saving NtAddAtom original prologue!" << std::endl;
+					LOG_ERROR("Failed to save NtAddAtom prologue.");
 					return false;
 				}
 
-
-				std::wcout << L"[DEBUG] Original bytes: ";
-				for (int i = 0; i < 12; i++) {
-					std::wcout << std::hex << static_cast<int>(oriNtAddAtomBytes[i]) << L" ";
+				std::wstringstream hexBytes;
+				hexBytes << "Original bytes: ";
+				for (int i = 0; i < 12; i++)
+				{
+					hexBytes << std::hex << std::setw(2) << std::setfill(L'0')
+						<< static_cast<int>(oriNtAddAtomBytes[i]) << L" ";
 				}
-				std::wcout << std::dec << L"\n";
+
+				LOG_INFO(hexBytes.str());
 
 
-				std::wcout << L"[DEBUG] Original bytes saved successfully\n";
+				LOG_SUCCESS("Original bytes saved successfully.");
 
 				auto hook_vec = X64Assembler::PolymorphicHook(kernel_function_address, 12);
 
 				if (!WriteToReadOnlyMemory(kernel_NtAddAtom, (void*)hook_vec.data(), 12))
 				{
-					std::wcout << L"[ERROR] WriteToReadOnlyMemory(hook) failed\n";
+					LOG_ERROR("Failed to write hook to kernel function.");
 					return false;
 				} 
 
@@ -236,28 +239,29 @@
 				if constexpr (is_void)
 				{
 					fn(arguments...);
-					std::wcout << L"[DEBUG] Void call completed\n";
+					LOG_WARNING("VOID call completed.");
 				}
 				else
 				{
 					*out_result = fn(arguments...);
-					std::wcout << L"[DEBUG] Call returned: " << *out_result << L"\n";
+					LOG_SUCCESS("Function returned : " << *out_result);
 				}
 
-				std::wcout << L"[DEBUG] Restoring original bytes...\n";
+				LOG_INFO("Restoring original bytes...");
 
 				// And finally restore the original bytes.
 				const bool restored = WriteToReadOnlyMemory(kernel_NtAddAtom, &oriNtAddAtomBytes, 12);
 				if (!restored)
 				{
-					std::wcout << L"[ERROR] Restore failed\n";
+					LOG_ERROR("Failed to restore original bytes.");
+					// Not returning false here, the call may have succeded despite the fact
+					// that we cannot unhook the function for whatever reason.
 				}
-				else
-				{
-					std::wcout << L"[DEBUG] Restore OK\n";
-				}
+				
 
-				std::wcout << L"[DEBUG] Function completed successfully\n";
+
+				LOG_SUCCESS("Function call completed successfully.");
+				JumpLine();
 				return restored;
 			}
 	};

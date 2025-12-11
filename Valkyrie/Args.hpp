@@ -9,6 +9,7 @@ struct Args
     std::wstring DriverName() const;
 
     bool help = false;
+    bool showDriverInfo = false;
     bool noStealth = false;
     bool noHeaderScramble = false;
     bool freeMemory = false;
@@ -29,11 +30,13 @@ static void PrintHelp()
 {
     LOG_WARNING(L"Usage: Valkyrie.exe [options] <MyEvilDriver.sys>");
     LOG_WARNING(L"Options :");
-    LOG_INFO(L"  -h     --help                Show this help");
-    LOG_INFO(L"  -nost  --noStealth           Do not erase Intel driver traces after mapping (Only delete driver file)");
-    LOG_INFO(L"  -f     --freeMemory          Free memory after driver entry call (One-shot driver)");
-    LOG_INFO(L"  -nosc  --noHeaderScramble    Leave driver header intact before mapping.");
-    LOG_INFO(L"  -d     --deepWipe            Write random safes opcodes in previously allocated driver memory");
+    JumpLine();
+    LOG_INFO(L"  -h      --help                Show this help");
+    LOG_INFO(L"  -di     --driverInfo          Show driver PE metadatas");
+    LOG_INFO(L"  -nost   --noStealth           Do not erase Intel driver traces after mapping (Only delete driver file)");
+    LOG_INFO(L"  -fm     --freeMemory          Free memory after driver entry call (One-shot driver)");
+    LOG_INFO(L"  -nosc   --noHeaderScramble    Leave driver header intact before mapping.");
+    LOG_INFO(L"  -dw     --deepWipe            Write random safes opcodes in previously allocated driver memory");
 }
 
 Args ParseArgs(int argc, wchar_t* argv[])
@@ -43,11 +46,12 @@ Args ParseArgs(int argc, wchar_t* argv[])
     struct Flag { const wchar_t* longFlag; const wchar_t* shortFlag; bool* target; };
    
     static Flag flags[] = {
-        { L"--help",               L"-h",    &a.help},
-        { L"--noStealth",          L"-nost", &a.noStealth},
-        { L"--noHeaderScramble",   L"-nosc", &a.noHeaderScramble},
-        { L"--freeMemory",         L"-f",    &a.freeMemory},
-        { L"--deepWipe",           L"-d",    &a.deepWipe},
+        { L"--help",               L"-h",      &a.help},
+        { L"--driverInfo",         L"-di",     &a.showDriverInfo},
+        { L"--noStealth",          L"-nost",   &a.noStealth},
+        { L"--noHeaderScramble",   L"-nosc",   &a.noHeaderScramble},
+        { L"--freeMemory",         L"-fm",     &a.freeMemory},
+        { L"--deepWipe",           L"-dw",     &a.deepWipe},
     };
 
     for (int i = 1; i < argc; ++i)
@@ -79,7 +83,8 @@ Args ParseArgs(int argc, wchar_t* argv[])
 
     if (a.driverPath.empty() && !a.help)
     {
-        LOG_ERROR(L"No driver file provided");
+        LOG_ERROR(L"No driver file provided !");
+        JumpLine();
         a.help = true;
     }
 

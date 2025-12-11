@@ -31,7 +31,8 @@ void ValkyrieMapper::ImageRebase(vec_relocs relocs, const ULONG64 delta)
 	}
 }
 
-vec_relocs ValkyrieMapper::GetRelocs(void* image_base) {
+vec_relocs ValkyrieMapper::GetRelocs(void* image_base)
+{
 	const PIMAGE_NT_HEADERS64 nt_headers = GetNtHeadersValk(image_base);
 
 	if (!nt_headers)
@@ -213,6 +214,7 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 	if (!noHeaderScramble) // Branch is a bit confusing. By default we always scramble the header, but if                        
 		                   // this arg is set to true by the user we leave the header intact.
 	{
+		JumpLine();
 		LOG_INFO("Scrambling driver header before mapping...");
 		uint32_t headerSize = drvImage.ntHeaders->OptionalHeader.SizeOfHeaders;
 		
@@ -295,6 +297,7 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 	// Free kernel pages if this is a non persistent driver.
 	if (freeMemAfterUse)
 	{
+		JumpLine();
 		LOG_INFO("Freeing kernel pages...");
 
 		if (!m_loader.MmFreeIndependentPages(kernelBase, allocSize))
@@ -307,8 +310,6 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 			
 		return 0;
 	}
-
-
 
 	LOG_SUCCESS("Driver successfully loaded and persistent.");
 	return kernelBase;

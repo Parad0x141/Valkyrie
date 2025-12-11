@@ -489,17 +489,11 @@ ValkStatus StealthKit::ClearCIHashTable()
     if (!g_BucketList || !g_Lock)
         return ValkStatus::ERR_RESOLVE_FAILED;
 
-    LOG_SUCCESS_HEX("BucketList", g_BucketList);
-    LOG_SUCCESS_HEX("Lock", g_Lock);
-    LOG_SUCCESS_HEX("TEST BUCKET : ", m_offsets.CiBucketList);
-    LOG_SUCCESS_HEX("TEST LOCK : ", m_offsets.CiBucketLock);
-
     if (!m_loader.ExAcquireResourceExclusiveLite(g_Lock, true))
         return ValkStatus::ERR_LOCK_FAILED;
 
-    const std::wstring targetName = m_loader.GetDriverName();  // "iqvw64e.sys"
-    const std::wstring targetPath = m_loader.GetDriverPath();  // "C:\Users\...\Temp\iqvw64e.sys"
-
+    const std::wstring targetName = m_loader.GetDriverName();
+    const std::wstring targetPath = m_loader.GetDriverPath();
     const size_t targetBytes = (targetPath.length() - 2) * sizeof(wchar_t);
 
     uintptr_t prev = (uintptr_t)g_BucketList;
@@ -516,28 +510,31 @@ ValkStatus StealthKit::ClearCIHashTable()
 
     if (!curr)
     {
-        LOG_SUCCESS("BucketList empty – nothing to clean");
+        LOG_SUCCESS("BucketList empty, nothing to clean.");
         m_loader.ExReleaseResourceLite(g_Lock);
         return ValkStatus::OK;
     }
 
-    while (curr)
-    {
+    bool lockReleased = false;  // Now tracking lock state for safety
+    ValkStatus finalStatus = ValkStatus::ERR_NOT_FOUND;
 
+    while (curr && !lockReleased)
+    {
         USHORT len = 0;
         if (!m_loader.ReadMemory(curr + offsetof(HashBucketEntry, DriverName.Length), &len, sizeof(len)))
         {
-            LOG_ERROR("failed to read Length");
+            LOG_ERROR("Failed to read Length");
+            finalStatus = ValkStatus::ERR_READ_FAILED;
             break;
         }
 
         uintptr_t bufferAddr = 0;
         if (!m_loader.ReadMemory(curr + offsetof(HashBucketEntry, DriverName.Buffer), &bufferAddr, sizeof(bufferAddr)))
         {
-            LOG_ERROR("failed to read Buffer address");
+            LOG_ERROR("Failed to read Buffer address");
+            finalStatus = ValkStatus::ERR_READ_FAILED;
             break;
         }
-
 
         if (bufferAddr && bufferAddr != (uintptr_t)nullptr && len > 0 && len <= MAX_NAME_LEN * sizeof(wchar_t))
         {
@@ -549,71 +546,77 @@ ValkStatus StealthKit::ClearCIHashTable()
                 name[charCount] = L'\0';
                 std::wstring_view sv(name.get(), charCount);
 
-                if (len == targetBytes)
+                if (len == targetBytes && sv.find(targetName) != std::wstring_view::npos)
                 {
+                    LOG_SUCCESS("Match found.");
 
-                    if (sv.find(targetName) != std::wstring_view::npos)
+                    uintptr_t next = 0;
+                    if (!m_loader.ReadMemory(curr, &next, sizeof(next)))
                     {
-                        LOG_SUCCESS("Found a match !");
-
-                        uintptr_t next = 0;
-                        if (!m_loader.ReadMemory(curr, &next, sizeof(next)))
-                        {
-                            LOG_ERROR("failed to read Next");
-                            break;
-                        }
-
-                        if (!m_loader.WriteMemory(prev, &next, sizeof(next)))
-                        {
-                            LOG_ERROR("failed to unlink");
-                            break;
-                        }
-
-                        if (!m_loader.ExFreePool(curr))
-                        {
-                            LOG_ERROR("ExFreePool failed");
-                            break;
-                        }
-
-                        LOG_SUCCESS("Entry unlinked + freed");
-                        m_loader.ExReleaseResourceLite(g_Lock);
-                        return ValkStatus::OK;
+                        LOG_ERROR("Failed to read Next");
+                        finalStatus = ValkStatus::ERR_READ_FAILED;
+                        break;
                     }
-                    else
+
+                    if (!m_loader.WriteMemory(prev, &next, sizeof(next)))
                     {
-                        LOG_WARNING("Length matches but name doesn't");
+                        LOG_ERROR("Failed to unlink");
+                        finalStatus = ValkStatus::ERR_WRITE_FAILED;
+                        break;
                     }
+
+                    if (!m_loader.ExFreePool(curr))
+                    {
+                        LOG_ERROR("ExFreePool failed");
+                        finalStatus = ValkStatus::ERR_NOT_FOUND;
+                        break;
+                    }
+
+                    LOG_SUCCESS("Entry unlinked from CiBucketList");
+                    finalStatus = ValkStatus::OK;
+                    break;  // Found, cleaned, we can break now.
+                }
+                else if (len == targetBytes)
+                {
+                    LOG_WARNING("Length matches but name doesn't");
                 }
             }
             else
             {
-                LOG_ERROR("failed to read driver name");
+                LOG_ERROR("Failed to read driver name");
+                finalStatus = ValkStatus::ERR_READ_FAILED;
+                break;
             }
         }
-
         else
         {
-            if (!bufferAddr) 
-            {
-                LOG_ERROR("Buffer address is NULL");
-            }
-            else if (len == 0)
-            {
-                LOG_ERROR("Length is zero");
-            }
+            LOG_ERROR("Invalid entry data");
+            finalStatus = ValkStatus::ERR_NOT_FOUND;
+            break;
         }
 
         prev = curr;
         if (!m_loader.ReadMemory(curr, &curr, sizeof(curr)))
         {
-            LOG_ERROR("failed to read Next pointer");
+            LOG_ERROR("Failed to read Next pointer");
+            finalStatus = ValkStatus::ERR_READ_FAILED;
             break;
         }
     }
 
-    LOG_WARNING("No more entries – driver not found in CI list");
-    m_loader.ExReleaseResourceLite(g_Lock);
-    return ValkStatus::ERR_NOT_FOUND;
+    // Better workflow, now release the lock whatever happend.
+    if (!lockReleased)
+    {
+        m_loader.ExReleaseResourceLite(g_Lock);
+        lockReleased = true;
+    }
+
+    if (finalStatus == ValkStatus::ERR_NOT_FOUND)
+    {
+        LOG_WARNING("Driver not found in CI list");
+    }
+
+    return finalStatus;
 }
 
     
