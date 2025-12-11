@@ -27,7 +27,7 @@ The author **assumes no liability** for misuse.
 ### ✅ Map Unsigned Drivers  
 Loads any `.sys` file **without a valid signature** into kernel space.  
 No Service Control Manager, no trace in the registry.  
-<!-- Screenshot: driver mapped in WinDbg -->
+<a href="https://ibb.co/CKFKhJrW"><img src="https://i.ibb.co/TM5MmKCr/Mapped-Dbg-View.jpg" alt="Mapped-Dbg-View" border="0"></a>
 
 ---
 
