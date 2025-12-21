@@ -1,5 +1,7 @@
 ﻿#include "ValkyrieMapper.hpp"
-#include "StealthKit.hpp"
+
+
+
 
 PIMAGE_NT_HEADERS64 ValkyrieMapper::GetNtHeadersValk(void* image_base) 
 {
@@ -153,6 +155,9 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
         return 0;
     }
 
+	//Test
+	memset(localBase, 0, drvImage.imageSize);
+
     // PE headers
     memcpy(localBase, drvImage.rawData.data(), drvImage.ntHeaders->OptionalHeader.SizeOfHeaders);
 
@@ -254,6 +259,8 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 		ULONG64 sectionAddress = DriverBase + sec.VirtualAddress;
 		ULONG32 sectionSize = (sec.Misc.VirtualSize + 0xFFF) & ~0xFFF; // Aligned
 
+
+
 		//LOG_SUCCESS(L"Section : " << std::wstring(name, name + strnlen(name, 8)));
 		//LOG_SUCCESS_HEX("RVA", sec.VirtualAddress);
 		//LOG_SUCCESS_HEX("Kernel addr", kernelBase + sec.VirtualAddress);
@@ -279,7 +286,7 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 
 		if (!m_loader.CallKernelFunction(m_loader.GetNtoskrnlBaseAddress(), &status, DriverEntryPoint, arg1, arg2))
 		{
-			LOG_ERROR("Driver entrypoint call failed");
+			LOG_ERROR("Driver entrypoint call failed"); 
 			VirtualFree(localBase, 0, MEM_RELEASE);
 			if (freeMemAfterUse)
 				m_loader.MmFreeIndependentPages(DriverBase, allocSize);
@@ -307,7 +314,7 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 			return 1;
 		}
 
-		LOG_SUCCESS("Successfully unallocated pages.");
+		LOG_SUCCESS_HEX("Successfully unallocated pages at : ", DriverBase);
 			
 		return 0;
 	}
@@ -315,7 +322,44 @@ ULONG64 ValkyrieMapper::MapDriver(PEImage& drvImage, ULONG64 arg1, ULONG64 arg2,
 	LOG_SUCCESS("Driver successfully loaded and persistent.");
 	return DriverBase;
 
+
 }
+
+
+// Randomize the 
+UINT64 ValkyrieMapper::GenerateSecureCookie()
+{
+	uint64_t seed = 0;
+
+	if (GetHardwareRandom64(seed))
+		goto mix;
+
+	// Fallback: entropy stack + timing + jitter
+	{
+		LARGE_INTEGER perf;
+		QueryPerformanceCounter(&perf);
+
+		UINT64 tick = GetTickCount64();
+		uintptr_t stack = reinterpret_cast<uintptr_t>(&seed);
+		DWORD pid = GetCurrentProcessId();
+		DWORD tid = GetCurrentThreadId();
+
+		seed = perf.QuadPart ^ tick ^ stack ^ pid ^ (static_cast<uint64_t>(tid) << 16);
+	}
+
+mix:
+	// Jitter JIT
+	volatile int jitter = 0;
+	for (int i = 0; i < (seed & 0x1F); ++i)
+		jitter += i * (i ^ 0x4B);
+
+	seed ^= (static_cast<uint64_t>(jitter) << 48);
+
+	LOG_SUCCESS_HEX("Generated seed : ", seed);
+
+	return seed ^ 0x2B992DDFA232;
+}
+
 
 
 // Make the driver GS compatible and bypass stack security checks.
@@ -365,17 +409,8 @@ bool ValkyrieMapper::FixSecurityCookie(void* local_image, ULONG64 kernel_image_b
 	LOG_INFO("Security checks done. Generating StackCookie now...");
 	JumpLine();
 
-	auto new_cookie = []() -> uint64_t {
 
-		LARGE_INTEGER perf;
-		QueryPerformanceCounter(&perf);
-
-		return 0x2B992DDFA232 ^
-			(static_cast<long long>(GetCurrentProcessId()) << 16) ^
-			(static_cast<long long>(GetCurrentThreadId()) << 32) ^
-			(GetTickCount64() << 48) ^
-			perf.QuadPart;
-		}();
+	auto new_cookie = GenerateSecureCookie();
 
 	*(uintptr_t*)(stack_cookie) = new_cookie;
 
@@ -383,3 +418,4 @@ bool ValkyrieMapper::FixSecurityCookie(void* local_image, ULONG64 kernel_image_b
 
 	return true;
 }
+

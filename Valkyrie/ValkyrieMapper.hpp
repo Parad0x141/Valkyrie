@@ -2,7 +2,17 @@
 
 #include "Common.hpp"
 #include "IntelLoader.hpp"
+#include "StealthKit.hpp"
 
+
+inline static bool GetHardwareRandom64(uint64_t& out)
+{
+#ifdef _WIN64
+	return _rdrand64_step(&out) == 1;
+#else
+	return false;
+#endif
+}
 
 
 struct RelocInfo
@@ -46,6 +56,7 @@ private:
 	vec_imports GetImports(void* image_base);
 	bool ResolveImports(vec_imports imports);
 	bool FixSecurityCookie(void* localImageBase, ULONG64 kernelImageBase);
+	UINT64 GenerateSecureCookie();
 
 
 
