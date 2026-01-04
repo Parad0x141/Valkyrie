@@ -1,9 +1,11 @@
 ﻿#pragma once
 
-#include "StealthLog.hpp"
 #include "XorLog.hpp"
+#include "Stringtable.hpp"
 #include <filesystem>
 #include <string>
+
+
 
 
 struct Args
@@ -33,16 +35,17 @@ static void PrintHelp()
 {
     bool test = false;
 
-    StealthLog::warn("Usage: Valkyrie.exe [options] <MyEvilDriver.sys>");
-    StealthLog::warn("Options :");
+    XorLog::Logger::Info(XorLog::Decrypt(StringTable::S_USAGE));
+    XorLog::Logger::Info(XorLog::Decrypt(StringTable::S_OPTIONS));
     JumpLine();
 
-    StealthLog::info("  -h      --help                Show this help");
-    StealthLog::info("  -di     --driverInfo          Show driver PE metadatas");
-    StealthLog::info("  -nost   --noStealth           Do not erase Intel driver traces after mapping (Only delete driver file)");
-    StealthLog::info("  -fm     --freeMemory          Free memory after driver entry call (One-shot driver)");
-    StealthLog::info("  -nosc   --noHeaderScramble    Leave driver header intact before mapping.");
-    StealthLog::info("  -dw     --deepWipe            Write random safes opcodes in previously allocated driver memory");
+    XorLog::Logger::Debug(XorLog::Decrypt(XorLog::Logger::HELLOWORLD));
+    
+    XorLog::Logger::Info(XorLog::Decrypt(StringTable::S_HELP));
+    XorLog::Logger::Info(XorLog::Decrypt(StringTable::S_NO_STEALTH));
+    XorLog::Logger::Info(XorLog::Decrypt(StringTable::S_FREE_MEM));
+    XorLog::Logger::Info(XorLog::Decrypt(StringTable::S_NO_HEADER_SCRAMBLE));
+    XorLog::Logger::Info(XorLog::Decrypt(StringTable::S_DEEP_WIPE));
 }
 
 Args ParseArgs(int argc, wchar_t* argv[])
@@ -76,12 +79,14 @@ Args ParseArgs(int argc, wchar_t* argv[])
 
         if (arg.starts_with(L"-"))
         {
-            LOG_ERROR(L"Unknown flag : " << arg << L"  (see -h)");
+            // LOG_ERROR(L"Unknown flag : " << arg << L"  (see -h)");
+            XorLog::Logger::Error(XorLog::Decrypt(StringTable::S_UNKNOWN_FLAG) + WStringToString(arg));
             a.help = true; return a;
         }
         if (!a.driverPath.empty())
         {
-            LOG_ERROR(L"Extra argument : " << arg);
+           // LOG_ERROR(L"Extra argument : " << arg);
+            XorLog::Logger::Error(XorLog::Decrypt(StringTable::S_EXTRA_ARG) + WStringToString(arg));
             a.help = true; return a;
         }
         a.driverPath = arg;
@@ -89,22 +94,13 @@ Args ParseArgs(int argc, wchar_t* argv[])
 
     if (a.driverPath.empty() && !a.help)
     {
-        LOG_ERROR(L"No driver file provided !");
+
+        XorLog::Logger::Error(XorLog::Decrypt(StringTable::S_NO_DRIVER) + WStringToString(a.driverPath));
         JumpLine();
+
         a.help = true;
     }
 
-
-    if (!a.driverPath.empty())
-    {
-        if (!std::filesystem::exists(a.driverPath))
-        {
-            LOG_ERROR(L"File not found : " << a.driverPath);
-            a.help = true;
-        }
-        else if (!a.driverPath.ends_with(L".sys"))
-            LOG_WARNING(L"Extension not .sys, continue anyway");
-    }
 
     return a;
 }

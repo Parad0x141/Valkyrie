@@ -17,6 +17,7 @@ VOID EnumerateSyscalls();
 VOID DumpBytes(const char* name, const uint8_t* bytes, size_t len);
 
 
+
 uintptr_t FindPattern(uintptr_t dwAddress, uintptr_t dwLen, BYTE* bMask, const char* szMask);
 BOOLEAN bDataCompare(const BYTE* pData, const BYTE* bMask, const char* szMask);
 std::string FormatHex(uint64_t value);

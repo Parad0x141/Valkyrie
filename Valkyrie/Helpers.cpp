@@ -70,6 +70,7 @@ BOOL ConfirmYesNo(const std::wstring& question)
     wchar_t ans = L'n';
     std::wcin >> ans;
     std::wcin.ignore(std::numeric_limits<std::streamsize>::max(), L'\n');
+
     return (ans == L'y' || ans == L'Y');
 }
 

@@ -129,9 +129,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="DebugTools.cpp" />
     <ClCompile Include="EnvProbe.cpp" />
-    <ClCompile Include="Experimental.cpp" />
     <ClCompile Include="Helpers.cpp" />
     <ClCompile Include="IntelLoader.cpp" />
     <ClCompile Include="Main.cpp" />
@@ -145,7 +143,6 @@
   <ItemGroup>
     <ClInclude Include="Args.hpp" />
     <ClInclude Include="Common.hpp" />
-    <ClInclude Include="DebugTools.hpp" />
     <ClInclude Include="EnvProbe.hpp" />
     <ClInclude Include="Experimental.hpp" />
     <ClInclude Include="Helper.hpp" />
@@ -158,7 +155,7 @@
     <ClInclude Include="PEUtils.hpp" />
     <ClInclude Include="SigTable.hpp" />
     <ClInclude Include="StealthKit.hpp" />
-    <ClInclude Include="StealthLog.hpp" />
+    <ClInclude Include="StringTable.hpp" />
     <ClInclude Include="ValkLogger.hpp" />
     <ClInclude Include="ValkStatus.hpp" />
     <ClInclude Include="ValkyrieMapper.hpp" />

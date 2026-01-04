@@ -13,7 +13,10 @@ static std::mutex& GetValkyrieLogMutex()
 	return m;
 }
 
-
+static void JumpLine()
+{
+    std::wcout << "\n";
+}
 
 
 

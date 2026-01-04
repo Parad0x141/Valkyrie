@@ -288,7 +288,8 @@ import.ordinals.push_back(0);
 		if (tlsDir.Size) LOG_WARNING("Driver has TLS callback, this is NOT supported by Valkyrie !");
 
 		auto& excDir = peImage->ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
-		if (excDir.Size) std::wcout << L"[+] Exception directory: " << excDir.Size << L" bytes\n";
+		if (excDir.Size)
+			std::wcout << L"[+] Exception directory: " << excDir.Size << L" bytes\n";
 
 		LOG_SUCCESS_HEX("PE parsing done. ImageSize: ", peImage->imageSize);
 

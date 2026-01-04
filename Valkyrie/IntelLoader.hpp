@@ -5,7 +5,6 @@
 	#include "PEUtils.hpp"
 	#include "X64Assembler.hpp"
 	#include "Win.hpp"
-    #include "StealthLog.hpp"
 	#include <ntstatus.h>
     #include <winternl.h>  
 

@@ -31,9 +31,6 @@ namespace XorLog {
     }
 
 
-#define XSTR(s) XorLog::Decrypt(XorLog::Encrypt(s))
-
-
     enum Color {
         Green = 32,
         Red = 31,
@@ -59,10 +56,13 @@ namespace XorLog {
     {
         // compile-time prefix & tags
         static constexpr auto PREFIX = Encrypt("[Valkyrie] ");
+        static constexpr auto TAG_INFO = Encrypt("[i] ");
         static constexpr auto TAG_SUCC = Encrypt("[+] ");
         static constexpr auto TAG_WARN = Encrypt("[!] ");
         static constexpr auto TAG_ERR = Encrypt("[-] ");
         static constexpr auto TAG_DBG = Encrypt("[*] ");
+
+
 
     public:
         template<typename... Args>
@@ -71,9 +71,22 @@ namespace XorLog {
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Green);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_SUCC) << oss.str() << '\n';
+            std::cout << Decrypt(PREFIX) << Decrypt(TAG_SUCC);
             ResetColor();
+            std::cout << oss.str() << '\n';
         }
+
+        template<typename... Args>
+        static void Info(Args&&... args)
+        {
+            std::ostringstream oss;
+            ((oss << std::forward<Args>(args)), ...);
+            SetColor(Color::Blue);
+            std::cout << Decrypt(PREFIX) << Decrypt(TAG_INFO);
+            ResetColor();
+            std::cout << oss.str() << '\n';
+        }
+
 
         template<typename... Args>
         static void Warning(Args&&... args)
@@ -81,30 +94,38 @@ namespace XorLog {
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Yellow);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_WARN) << oss.str() << '\n';
+            std::cout << Decrypt(PREFIX) << Decrypt(TAG_WARN);
             ResetColor();
+            std::cout << oss.str() << '\n';
         }
 
         template<typename... Args>
-        static void Error(Args&&... args) 
+        static void Error(Args&&... args)
         {
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Red);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_ERR) << oss.str() << '\n';
+            std::cout << Decrypt(PREFIX) << Decrypt(TAG_ERR);
             ResetColor();
+            std::cout << oss.str() << '\n';
         }
 
         template<typename... Args>
-        static void Debug(Args&&... args) 
+        static void Debug(Args&&... args)
         {
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Magenta);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_DBG) << oss.str() << '\n';
+            std::cout << Decrypt(PREFIX) << Decrypt(TAG_DBG);
             ResetColor();
+            std::cout << oss.str() << '\n';
         }
+
+        static constexpr auto HELLOWORLD = Encrypt("Hello XorLog !");
+
     };
 
-} // namespace XorLog
+} 
+
+
 
