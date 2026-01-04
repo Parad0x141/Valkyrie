@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "Common.hpp"
+#include <ostream>
 
 inline void Splash()
 {

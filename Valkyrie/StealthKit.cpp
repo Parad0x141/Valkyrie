@@ -9,7 +9,9 @@ BOOLEAN StealthKit::DeleteDriverFile(const std::wstring& serviceName)
 {
     WCHAR tempPath[MAX_PATH];
     GetTempPathW(MAX_PATH, tempPath);
+
     std::wstring driverPath = std::wstring(tempPath) + L"iqvw64e.sys";
+    std::string narrowedDrvPath = WStringToString(driverPath);
 
     if (DeleteFileW(driverPath.c_str()))
     {
