@@ -35,17 +35,17 @@ static void PrintHelp()
 {
     bool test = false;
 
-    XorLog::Logger::Info(StringTable::S_USAGE);
-    XorLog::Logger::Info(StringTable::S_OPTIONS);
+    XorLog::Logger::Info(StringTable::ARGS_USAGE);
+    XorLog::Logger::Info(StringTable::ARGS_OPTIONS);
     JumpLine();
 
     XorLog::Logger::Debug(XorLog::Decrypt(XorLog::Logger::HELLOWORLD));
     
-    XorLog::Logger::Info(StringTable::S_HELP);
-    XorLog::Logger::Info(StringTable::S_NO_STEALTH);
-    XorLog::Logger::Info(StringTable::S_FREE_MEM);
-    XorLog::Logger::Info(StringTable::S_NO_HEADER_SCRAMBLE);
-    XorLog::Logger::Info(StringTable::S_DEEP_WIPE);
+    XorLog::Logger::Info(StringTable::ARGS_HELP);
+    XorLog::Logger::Info(StringTable::ARGS_NO_STEALTH);
+    XorLog::Logger::Info(StringTable::ARGS_FREE_MEM);
+    XorLog::Logger::Info(StringTable::ARGS_NO_HEADER_SCRAMBLE);
+    XorLog::Logger::Info(StringTable::ARGS_DEEP_WIPE);
 }
 
 Args ParseArgs(int argc, wchar_t* argv[])
@@ -80,13 +80,13 @@ Args ParseArgs(int argc, wchar_t* argv[])
         if (arg.starts_with(L"-"))
         {
             // LOG_ERROR(L"Unknown flag : " << arg << L"  (see -h)");
-            XorLog::Logger::Error(XorLog::Decrypt(StringTable::S_UNKNOWN_FLAG), WStringToString(arg));
+            XorLog::Logger::Error(StringTable::ARGS_UNKNOWN_FLAG), WStringToString(arg);
             a.help = true; return a;
         }
         if (!a.driverPath.empty())
         {
            // LOG_ERROR(L"Extra argument : " << arg);
-            XorLog::Logger::Error(StringTable::S_EXTRA_ARG), WStringToString(arg);
+            XorLog::Logger::Error(StringTable::ARGS_EXTRA_ARG), WStringToString(arg);
             a.help = true; return a;
         }
         a.driverPath = arg;
@@ -95,7 +95,7 @@ Args ParseArgs(int argc, wchar_t* argv[])
     if (a.driverPath.empty() && !a.help)
     {
 
-        XorLog::Logger::Error(StringTable::S_NO_DRIVER), WStringToString(a.driverPath);
+        XorLog::Logger::Error(StringTable::ARGS_NO_DRIVER), WStringToString(a.driverPath);
         JumpLine();
 
         a.help = true;

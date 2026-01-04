@@ -31,10 +31,8 @@ static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMappe
 	auto pe = PEUtils::ParsePE(narrowedPath);
 
 	if (!pe || !PEUtils::ValidateDriverPE(*pe))
-	{
-		LOG_ERROR("Invalid driver PE. Aborting.");
 		return;
-	}
+	
 
 	// Optionnaly show PE metas
 	if(args.showDriverInfo)
@@ -150,17 +148,14 @@ int wmain(int argc, wchar_t* arvg[])
 	ValkyrieMapper mapper(loader);
 	
 	LOG_INFO("Dropping driver...\n");
-	if (!WriteDriverFile()) 
-	{
-		LOG_ERROR("Failed to write driver file to disk. Aborting.");
+	if (!WriteDriverFile()) 	
 		return EXIT_FAILURE;
-	}
+	
 
 
 	LOG_INFO("Loading vulnerable driver...\n");
 	if (!loader.LoadVulnDriver())
 	{
-		LOG_ERROR("Failed to load Intel driver. Aborting.");
 		DeleteDriverFile();
 		return EXIT_FAILURE;
 	}
@@ -169,22 +164,15 @@ int wmain(int argc, wchar_t* arvg[])
 	LOG_INFO("Opening device...");
 	if (!loader.OpenDevice()) 
 	{
-		LOG_ERROR("Failed to open device. Aborting.");
 		loader.UnloadVulnDriver();
 		DeleteDriverFile();
 		return EXIT_FAILURE;
 	}
 
 
-	if (resolver.ResolveExported() != ValkStatus::OK)
-	{
-		LOG_ERROR("Resolver failed to resolve one or more exported functions. Aborting.");
-	}
-
-	StealthKit stealthKit(loader, resolver.GetOffsets());
-
-
+	resolver.ResolveExported();
 	resolver.ResolvePatterns();
+
 	if (!resolver.AllOffsetsResolved())
 	{
 		system("cls");
@@ -193,10 +181,13 @@ int wmain(int argc, wchar_t* arvg[])
 		return EXIT_FAILURE;
 	}
 
-	LOG_SUCCESS("All kernel offsets successfully resolved, mapper ready...");
-	Sleep(3000);
-
 	loader.SetOffsets(resolver.GetOffsets());
+	StealthKit stealthKit(loader, resolver.GetOffsets());
+
+
+	LOG_SUCCESS("All kernel offsets successfully resolved, mapper ready...");
+	Sleep(3000); // TODO Add more and Randomize
+
 	
 	MapDriver(loader, stealthKit, mapper, args);
 

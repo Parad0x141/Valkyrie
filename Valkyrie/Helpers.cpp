@@ -61,6 +61,7 @@ BOOL WriteDriverFile()
     }
 
     LOG_SUCCESS("Driver written to : " << driverPath );
+
     return TRUE;
 }
 

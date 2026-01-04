@@ -16,7 +16,6 @@ namespace XorLog {
     struct Encrypted 
     {
         std::array<char, N> data{};
-        constexpr Encrypted() = default;
     };
 
 
