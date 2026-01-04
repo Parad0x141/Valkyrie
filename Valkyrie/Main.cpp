@@ -1,4 +1,4 @@
-﻿// Code by Cyril "Parad0x141" Bouvier - 2025  Valkyrie v0.4.2
+﻿// Code by Cyril "Parad0x141" Bouvier - 2026  Valkyrie v0.4.2
 
 
 // Valkyrie is a clean and complete rewrite of KDMapper by TheCruz
@@ -114,9 +114,9 @@ static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMappe
 int wmain(int argc, wchar_t* arvg[])
 {
 
-	rang::setControlMode(rang::control::Force);
-
 	Args args = ParseArgs(__argc, __wargv);
+
+	XorLog::EnableANSI();
 
 	if (args.help)
 	{
@@ -144,7 +144,6 @@ int wmain(int argc, wchar_t* arvg[])
 	loader.SetKernelBaseAddress();
 
 	Resolver resolver(loader);
-
 	ValkyrieMapper mapper(loader);
 	
 	LOG_INFO("Dropping driver...\n");
