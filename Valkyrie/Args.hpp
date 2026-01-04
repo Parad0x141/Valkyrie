@@ -1,7 +1,10 @@
 ﻿#pragma once
 
-#include "Common.hpp"
+#include "StealthLog.hpp"
+#include "XorLog.hpp"
 #include <filesystem>
+#include <string>
+
 
 struct Args
 {
@@ -28,15 +31,18 @@ Args ParseArgs(int argc, wchar_t* argv[]);
 // Auto doc
 static void PrintHelp()
 {
-    LOG_WARNING(L"Usage: Valkyrie.exe [options] <MyEvilDriver.sys>");
-    LOG_WARNING(L"Options :");
+    bool test = false;
+
+    StealthLog::warn("Usage: Valkyrie.exe [options] <MyEvilDriver.sys>");
+    StealthLog::warn("Options :");
     JumpLine();
-    LOG_INFO(L"  -h      --help                Show this help");
-    LOG_INFO(L"  -di     --driverInfo          Show driver PE metadatas");
-    LOG_INFO(L"  -nost   --noStealth           Do not erase Intel driver traces after mapping (Only delete driver file)");
-    LOG_INFO(L"  -fm     --freeMemory          Free memory after driver entry call (One-shot driver)");
-    LOG_INFO(L"  -nosc   --noHeaderScramble    Leave driver header intact before mapping.");
-    LOG_INFO(L"  -dw     --deepWipe            Write random safes opcodes in previously allocated driver memory");
+
+    StealthLog::info("  -h      --help                Show this help");
+    StealthLog::info("  -di     --driverInfo          Show driver PE metadatas");
+    StealthLog::info("  -nost   --noStealth           Do not erase Intel driver traces after mapping (Only delete driver file)");
+    StealthLog::info("  -fm     --freeMemory          Free memory after driver entry call (One-shot driver)");
+    StealthLog::info("  -nosc   --noHeaderScramble    Leave driver header intact before mapping.");
+    StealthLog::info("  -dw     --deepWipe            Write random safes opcodes in previously allocated driver memory");
 }
 
 Args ParseArgs(int argc, wchar_t* argv[])

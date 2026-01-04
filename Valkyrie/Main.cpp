@@ -1,10 +1,4 @@
-﻿// Code by Cyril "Parad0x141" Bouvier - 2025  Valkyrie v0.3
-
-// Comments are like blood in binaries. A subtle lifeline that reminds you
-// how to keep your code alive.
- 
-
-// This is a work in progress most of the main features are impl and working.
+﻿// Code by Cyril "Parad0x141" Bouvier - 2025  Valkyrie v0.4.2
 
 
 // Valkyrie is a clean and complete rewrite of KDMapper by TheCruz
@@ -19,28 +13,8 @@
 #include "PEUtils.hpp"
 #include "ValkyrieMapper.hpp"
 #include "StealthKit.hpp"
-#include "DebugTools.hpp"
 #include "Init.hpp"
 #include "Resolver.hpp"
-#include "Experimental.hpp"
-
-// Workflow will change to :
-
-// [1 -> Setup]
-
-//1. Load Intel driver
-//2. Early offsets resolve
-//3. Offsets validation
-//4. if(failed) -> cleanup
-
-// [2 -> Operations]
-
-// 5. Map driver(using offset cache)
-// 6. (PiDDB, CI, etc.)
-// 7. Unload driver
-// 8. Misc cleanup (ETW restore...)
-
-// Make more sense and will be way more stable like this.
 
 
 
@@ -69,9 +43,9 @@ static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMappe
 	// Clean if user abort operations.
 
 	system("cls");
-	LOG_INFO("You're about to map : " << args.DriverName());
+	LOG_INFO("Loading -> : " << args.DriverName());
 	JumpLine();
-	if (!ConfirmYesNo(L"Do you want to map this driver ? "))
+	if (!ConfirmYesNo(L"Do you really want to load this driver ?"))
 	{
 
 		system("cls");
@@ -178,7 +152,7 @@ int wmain(int argc, wchar_t* arvg[])
 	LOG_INFO("Dropping driver...\n");
 	if (!WriteDriverFile()) 
 	{
-		LOG_ERROR("Failed to drop write driver file to disk. Aborting.");
+		LOG_ERROR("Failed to write driver file to disk. Aborting.");
 		return EXIT_FAILURE;
 	}
 

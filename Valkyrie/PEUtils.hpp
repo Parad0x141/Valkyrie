@@ -1,6 +1,12 @@
 ﻿#pragma once
-#include "Common.hpp"
 #include "IntelLoader.hpp"
+#include <cstdint>
+#include <vector>
+#include <Windows.h>
+#include <memory>
+#include <string>
+#include <sstream>
+
 
 
 

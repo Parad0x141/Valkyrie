@@ -1,12 +1,15 @@
 ﻿// PatternScanner.hpp 
 #pragma once
+#define NOMINMAX // Avoid min/max redef by Windows.h
 
-#include "Common.hpp"
+#include <Windows.h>
+#include <cstdint>
+#include <mutex>
+#include <string>
+#include <utility>
 #include "IntelLoader.hpp"
 #include <map>
-#include <immintrin.h>
-#include <emmintrin.h>
-#include <chrono>
+#include <vector>
 
 
 

@@ -1,4 +1,6 @@
 ﻿#include "PEUtils.hpp"
+#include <vector>
+#include <fstream>
 
 namespace PEUtils
 {

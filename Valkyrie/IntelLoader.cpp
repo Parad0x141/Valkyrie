@@ -769,3 +769,4 @@ IntelLoader::~IntelLoader()
 	ntoskrnlBaseAddress = 0;
 
 }
+

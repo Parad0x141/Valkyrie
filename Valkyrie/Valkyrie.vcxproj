@@ -130,6 +130,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="DebugTools.cpp" />
+    <ClCompile Include="EnvProbe.cpp" />
     <ClCompile Include="Experimental.cpp" />
     <ClCompile Include="Helpers.cpp" />
     <ClCompile Include="IntelLoader.cpp" />
@@ -145,6 +146,7 @@
     <ClInclude Include="Args.hpp" />
     <ClInclude Include="Common.hpp" />
     <ClInclude Include="DebugTools.hpp" />
+    <ClInclude Include="EnvProbe.hpp" />
     <ClInclude Include="Experimental.hpp" />
     <ClInclude Include="Helper.hpp" />
     <ClInclude Include="Init.hpp" />
@@ -156,11 +158,13 @@
     <ClInclude Include="PEUtils.hpp" />
     <ClInclude Include="SigTable.hpp" />
     <ClInclude Include="StealthKit.hpp" />
+    <ClInclude Include="StealthLog.hpp" />
     <ClInclude Include="ValkLogger.hpp" />
     <ClInclude Include="ValkStatus.hpp" />
     <ClInclude Include="ValkyrieMapper.hpp" />
     <ClInclude Include="Win.hpp" />
     <ClInclude Include="X64Assembler.hpp" />
+    <ClInclude Include="XorLog.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

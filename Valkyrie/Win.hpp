@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "Common.hpp"
+#include <winternl.h>  
 
 constexpr ULONG MAX_IMG_NOTIFY = 64;
 constexpr auto SystemExtendedHandleInformation = static_cast<SYSTEM_INFORMATION_CLASS>(64);

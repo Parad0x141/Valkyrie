@@ -1,9 +1,8 @@
 ﻿#pragma once
 
 #include "Common.hpp"
-#include "IntelLoader.hpp"
 #include "Win.hpp"
-
+#include "IntelLoader.hpp"
 
 class Experimental
 {

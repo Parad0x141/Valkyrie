@@ -2,7 +2,6 @@
 
 #include "Common.hpp"
 #include "IntelLoader.hpp"
-#include "StealthKit.hpp"
 
 
 inline static bool GetHardwareRandom64(uint64_t& out)

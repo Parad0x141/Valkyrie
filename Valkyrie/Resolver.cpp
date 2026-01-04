@@ -29,7 +29,7 @@ ValkStatus Resolver::ResolveExported()
             if (!out)
             {
                 LOG_ERROR("Failed to resolve " << name);
-                return ValkStatus::ERR_RESOLVER_ADDRESS_NOT_FOUND;
+                return ValkStatus::ERR_RESOLVE_FAILED;
             }
 
             

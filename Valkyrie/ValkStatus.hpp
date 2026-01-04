@@ -1,6 +1,6 @@
 ﻿#pragma once
-
-enum class ValkStatus : uint32_t
+#include <Windows.h>
+enum class ValkStatus : UINT
 {
     OK = 0,
     ERR_DRIVER_DELETE_FAILED = 1,
