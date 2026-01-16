@@ -1,16 +1,56 @@
 #pragma once
+
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+
+#include <Windows.h>
 #include <array>
+#include <string_view>
 #include <string>
 #include <iostream>
 #include <sstream>
 #include <cstdint>
+#include <mutex>
+
+// Simple XOR/shift obfuscation to avoid plain strings in binaries.
 
 
-// Compile time XOR, 0 overhead runtime.
+// In Decrypt():
+// Excludes the null terminator from the final std::string
 
+// In DecryptView():
+// Optimized: Same as Decrypt() but uses string_view & thread-local storage to avoid heap allocations
+
+
+
+
+
+// Macro to create compile-time encrypted strings (constexpr)
+// 
+// GOOD: inline constexpr auto GOOD = XSTR("GOOD");
+// BAD:  const auto bad = XSTR("BAD"); // Must be constexpr!
+
+// Deduced type is always Encrypted<N>, not const char*
+
+// Example: inline constexpr auto S = XSTR("test");
+// Type of S is Encrypted<5> (includes the null terminator)
+#define XSTR(s) (XorLog::Encrypt(s))
+
+
+// Lazy man macros
+#define XLOG_INFO(...)    XorLog::Logger::Info(__VA_ARGS__)
+#define XLOG_SUCCESS(...) XorLog::Logger::Success(__VA_ARGS__)
+#define XLOG_ERROR(...)   XorLog::Logger::Error(__VA_ARGS__)
+#define XLOG_WARNING(...) XorLog::Logger::Warning(__VA_ARGS__)
+#define XLOG_DEBUG(...)   XorLog::Logger::Debug(__VA_ARGS__)
 
 namespace XorLog {
 
+    inline std::mutex& GetMutex()
+    {
+        static std::mutex mutex;
+        return mutex;
+    }
    
     template<std::size_t N>
     struct Encrypted 
@@ -19,7 +59,7 @@ namespace XorLog {
     };
 
 
-    // This should be nice enough
+
     constexpr uint64_t CompileTimeSeed() noexcept 
     {
         uint64_t seed = (__TIME__[7] - '0') +
@@ -56,7 +96,8 @@ namespace XorLog {
     }
 
     template<std::size_t N, uint64_t Seed = CompileTimeSeed()>
-    inline std::string Decrypt(const Encrypted<N>& e) {
+    inline std::string Decrypt(const Encrypted<N>& e) 
+    {
         std::array<char, N> buf = e.data;
 
         for (std::size_t i = 0; i < N; ++i)
@@ -69,10 +110,33 @@ namespace XorLog {
             buf[i] ^= key1 ^ key2 ^ key3;
         }
 
-        return { buf.data(), N - 1 };
+        // Without the null terminato
+        return { buf.data(), (N > 0 ? N - 1 : 0) };
     }
 
-    void EnableANSI()
+
+
+    // Optimized
+    template<std::size_t N>
+    inline std::string_view DecryptView(const Encrypted<N>& e)
+    {
+        thread_local std::array<char, N> buf;   
+        buf = e.data;                           
+
+        constexpr uint64_t Seed = CompileTimeSeed();
+        for (std::size_t i = 0; i < N; ++i)
+        {
+            uint8_t key1 = static_cast<uint8_t>((Seed >> (i % 8)) & 0xFF);
+            uint8_t key2 = static_cast<uint8_t>((i * 0x9E3779B1) ^ 0xAA);
+            uint8_t key3 = static_cast<uint8_t>(~i ^ ((i << 3) | (i >> 5)));
+
+            buf[i] ^= key1 ^ key2 ^ key3;
+        }
+
+        return { buf.data(), (N > 0 ? N - 1 : 0) };
+    }
+
+    inline void EnableANSI()
     {
         HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
         if (hOut == INVALID_HANDLE_VALUE) return;
@@ -80,15 +144,14 @@ namespace XorLog {
         DWORD dwMode = 0;
         if (!GetConsoleMode(hOut, &dwMode)) return;
 
-        // Activer ENABLE_VIRTUAL_TERMINAL_PROCESSING
         dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
         SetConsoleMode(hOut, dwMode);
     }
 
 
-
     // ANSI color codes
-    enum Color {
+    enum Color 
+    {
         Green = 32,
         Red = 31,
         Blue = 34,
@@ -108,7 +171,6 @@ namespace XorLog {
     }
 
   
-#define XSTR(s) (XorLog::Encrypt(s))
 
     class Logger 
     {
@@ -127,17 +189,22 @@ namespace XorLog {
         template<typename... Args>
         static void Success(Args&&... args)
         {
+            std::lock_guard<std::mutex> lock(GetMutex());
+
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Green);
             std::cout << Decrypt(PREFIX) << Decrypt(TAG_SUCC);
             ResetColor();
             std::cout << oss.str() << '\n';
+
         }
 
         template<std::size_t N, typename... Args>
         static void Success(const Encrypted<N>& encrypted, Args&&... args)
         {
+            std::lock_guard<std::mutex> lock(GetMutex());
+
             std::ostringstream oss;
             oss << Decrypt(encrypted);
             ((oss << std::forward<Args>(args)), ...);
@@ -150,6 +217,9 @@ namespace XorLog {
         template<typename... Args>
         static void Info(Args&&... args)
         {
+            std::lock_guard<std::mutex> lock(GetMutex());
+
+
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Blue);
@@ -161,6 +231,9 @@ namespace XorLog {
         template<std::size_t N, typename... Args>
         static void Info(const Encrypted<N>& encrypted, Args&&... args)
         {
+            std::lock_guard<std::mutex> lock(GetMutex());
+
+
             std::ostringstream oss;
             oss << Decrypt(encrypted);
             ((oss << std::forward<Args>(args)), ...);
@@ -173,6 +246,9 @@ namespace XorLog {
         template<typename... Args>
         static void Warning(Args&&... args)
         {
+            std::lock_guard<std::mutex> lock(GetMutex());
+
+
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Yellow);
@@ -184,6 +260,9 @@ namespace XorLog {
         template<std::size_t N, typename... Args>
         static void Warning(const Encrypted<N>& encrypted, Args&&... args)
         {
+
+            std::lock_guard<std::mutex> lock(GetMutex());
+
             std::ostringstream oss;
             oss << Decrypt(encrypted);
             ((oss << std::forward<Args>(args)), ...);
@@ -196,6 +275,9 @@ namespace XorLog {
         template<typename... Args>
         static void Error(Args&&... args)
         {
+
+            std::lock_guard<std::mutex> lock(GetMutex());
+
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Red);
@@ -207,6 +289,9 @@ namespace XorLog {
         template<std::size_t N, typename... Args>
         static void Error(const Encrypted<N>& encrypted, Args&&... args)
         {
+            std::lock_guard<std::mutex> lock(GetMutex());
+
+
             std::ostringstream oss;
             oss << Decrypt(encrypted);
             ((oss << std::forward<Args>(args)), ...);
@@ -219,6 +304,9 @@ namespace XorLog {
         template<typename... Args>
         static void Debug(Args&&... args)
         {
+            std::lock_guard<std::mutex> lock(GetMutex());
+
+
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Magenta);
@@ -230,6 +318,9 @@ namespace XorLog {
         template<std::size_t N, typename... Args>
         static void Debug(const Encrypted<N>& encrypted, Args&&... args)
         {
+            std::lock_guard<std::mutex> lock(GetMutex());
+
+
             std::ostringstream oss;
             oss << Decrypt(encrypted);
             ((oss << std::forward<Args>(args)), ...);
@@ -244,6 +335,7 @@ namespace XorLog {
     };
 
 } 
+
 
 
 

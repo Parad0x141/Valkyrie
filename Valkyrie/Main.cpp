@@ -15,6 +15,9 @@
 #include "StealthKit.hpp"
 #include "Init.hpp"
 #include "Resolver.hpp"
+#include "XorLog.hpp"
+
+
 
 
 
