@@ -1,4 +1,4 @@
-﻿#include "Helper.hpp"
+﻿#include "Helpers.hpp"
 #include <filesystem>
 
 #include <format>
@@ -191,4 +191,16 @@ std::string WStringToString(const std::wstring& w)
     return std::filesystem::path(w).string();
 }
 
+
 std::wstring FormatHexWString(uint64_t v) { return L"0x" + std::to_wstring(v); }
+
+
+const char* stristr(const char* haystack, const char* needle)
+{
+    if (!haystack || !needle) return nullptr;
+    size_t len = strlen(needle);
+    for (; *haystack; ++haystack) {
+        if (_strnicmp(haystack, needle, len) == 0) return haystack;
+    }
+    return nullptr;
+}

@@ -1,7 +1,7 @@
 ﻿	#pragma once
 
 	#include "Common.hpp"
-	#include "Helper.hpp"
+	#include "Helpers.hpp"
 	#include "PEUtils.hpp"
 	#include "X64Assembler.hpp"
 	#include "Win.hpp"
@@ -150,6 +150,7 @@
 
 		BOOL IsValid() const noexcept { return hIntelDriver != INVALID_HANDLE_VALUE && ntoskrnlBaseAddress != 0; }
 		BOOL IsCanonicalAddress(uint64_t address) const { uint64_t high = address >> 48;  return high == 0 || high == 0xFFFF; }
+		BOOL IsKernelAddress(uint64_t addr) const { return (addr >= 0xFFFF800000000000ULL && addr <= 0xFFFFFFFFFFFFFFFFULL); } // Windows x64 kernel space : FFFF8000'00000000 - FFFF'FFFFFFFFFF
 		HANDLE GetHandle() const { return hIntelDriver; }
 
 

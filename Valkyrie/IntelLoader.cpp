@@ -491,12 +491,30 @@ PVOID IntelLoader::RtlEnumerateGenericTableWithoutSplayingAvl(PRTL_AVL_TABLE Tab
 
 BOOL IntelLoader::ReadMemory(uint64_t address, void* buffer, uint64_t size) const
 {
+	if (!address || !buffer || !size)
+		return FALSE;
+
+	// Max 1GB
+	if (size > 1024 * 1024 * 1024)
+		return FALSE; 
+
 	return MemoryCopy(reinterpret_cast<uint64_t>(buffer), address, size);
 
 }
 
 BOOL IntelLoader::WriteMemory(uint64_t address, void* buffer, uint64_t size) const
 {
+	
+	if (!address || !buffer || !size)
+		return FALSE;
+
+	// Same as read capped to 1GB
+	if (size > 1024 * 1024 * 1024)
+		return FALSE;
+
+	if (!IsKernelAddress(address)) // FIX : Added kernel space check
+		return FALSE;
+
 	return MemoryCopy(address, reinterpret_cast<uint64_t>(buffer), size);
 }
 
@@ -660,6 +678,8 @@ PVOID IntelLoader::ResolveRelativeAddress(PVOID Instruction, ULONG OffsetOffset,
 }
 
 
+
+
 UINT64 IntelLoader::MmAllocateIndependentPagesEx(uint32_t size)
 {
 	if (!size)
@@ -769,4 +789,5 @@ IntelLoader::~IntelLoader()
 	ntoskrnlBaseAddress = 0;
 
 }
+
 

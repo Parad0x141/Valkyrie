@@ -39,8 +39,6 @@ static void PrintHelp()
     XLOG_INFO(StringTable::ARGS_OPTIONS);
     JumpLine();
 
-    XLOG_INFO(XorLog::DecodeSv(XorLog::Logger::HELLOWORLD));
-    
     XLOG_INFO(StringTable::ARGS_HELP);
     XLOG_INFO(StringTable::ARGS_NO_STEALTH);
     XLOG_INFO(StringTable::ARGS_FREE_MEM);

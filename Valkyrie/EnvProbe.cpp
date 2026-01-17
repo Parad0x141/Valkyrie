@@ -14,7 +14,7 @@
 #include <intrin.h>
 #include <vector>
 
-#include "Helper.hpp"
+#include "Helpers.hpp"
 #include "XorLog.hpp" 
 #include <string>
 #include <iostream>
@@ -101,20 +101,30 @@ BOOL EnvProbe::IsBlacklistedManufacturer() const
 	constexpr auto REG_PATH = XSTR(R"_(SYSTEM\CurrentControlSet\Control\SystemInformation)_");
 	constexpr auto REG_MANUFACTURER = XSTR("SystemManufacturer");
 	constexpr auto REG_MODEL = XSTR("SystemProductName");
-
+	
 	if (RegGetValueA(HKEY_LOCAL_MACHINE,
 		DecodeSv(REG_PATH).data(),
 		DecodeSv(REG_MANUFACTURER).data(),
 		RRF_RT_REG_SZ, nullptr, manufacturer, &sz) != ERROR_SUCCESS)
+	{
+		std::cout << "Error fetching manufacturer from registry !" << "\n";
 		return FALSE;
+	}
 
-	manufacturer[sz] = '\0'; 
+	if (sz >= sizeof(manufacturer))
+		sz = sizeof(manufacturer) - 1;
+
+	manufacturer[sz] = '\0';
+
 
 	sz = sizeof(model) - 1;
 	RegGetValueA(HKEY_LOCAL_MACHINE,
 		DecodeSv(REG_PATH).data(),
 		DecodeSv(REG_MODEL).data(),
 		RRF_RT_REG_SZ, nullptr, model, &sz);
+
+	if (sz >= sizeof(model))
+		sz = sizeof(model) - 1;
 
 	model[sz] = '\0';
 
@@ -123,10 +133,10 @@ BOOL EnvProbe::IsBlacklistedManufacturer() const
 	constexpr auto QEMU = XSTR("QEMU");
 	constexpr auto XEN = XSTR("Xen");
 
-	if (strstr(manufacturer, DecodeSv(VMWARE).data()) ||
-		strstr(manufacturer, DecodeSv(INNOTEK).data()) ||
-		strstr(manufacturer, DecodeSv(QEMU).data()) ||
-		strstr(manufacturer, DecodeSv(XEN).data()))
+	if (stristr(manufacturer, DecodeSv(VMWARE).data()) ||
+		stristr(manufacturer, DecodeSv(INNOTEK).data()) ||
+		stristr(manufacturer, DecodeSv(QEMU).data()) ||
+		stristr(manufacturer, DecodeSv(XEN).data()))
 		return TRUE;
 
 	constexpr auto VBOX_MODEL = XSTR("VirtualBox");
@@ -135,18 +145,18 @@ BOOL EnvProbe::IsBlacklistedManufacturer() const
 	constexpr auto KVM_MODEL = XSTR("KVM");
 	constexpr auto STANDARD_PC = XSTR("Standard PC");
 
-	if (strstr(model, DecodeSv(VBOX_MODEL).data()) ||
-		strstr(model, DecodeSv(VMWARE_MODEL).data()) ||
-		strstr(model, DecodeSv(VIRTUAL_MACHINE).data()) ||
-		strstr(model, DecodeSv(KVM_MODEL).data()) ||
-		strstr(model, DecodeSv(STANDARD_PC).data()))
+	if (stristr(model, DecodeSv(VBOX_MODEL).data()) ||
+		stristr(model, DecodeSv(VMWARE_MODEL).data()) ||
+		stristr(model, DecodeSv(VIRTUAL_MACHINE).data()) ||
+		stristr(model, DecodeSv(KVM_MODEL).data()) ||
+		stristr(model, DecodeSv(STANDARD_PC).data()))
 		return TRUE;
 
 	constexpr auto MICROSOFT = XSTR("Microsoft Corporation");
 	constexpr auto MS_VM_COMBO = XSTR("Virtual Machine");
 
-	if (strstr(manufacturer, DecodeSv(MICROSOFT).data()) &&
-		strstr(model, DecodeSv(MS_VM_COMBO).data()))
+	if (stristr(manufacturer, DecodeSv(MICROSOFT).data()) &&
+		stristr(model, DecodeSv(MS_VM_COMBO).data()))
 		return TRUE;
 
 	return FALSE;
@@ -319,6 +329,7 @@ BOOL EnvProbe::IsFreshInstall() const
 		DecodeSv(REG_INSTALL).data(),
 		RRF_RT_REG_DWORD, nullptr, &installDate, &sz) != ERROR_SUCCESS)
 	{
+		//std::cout << "Failed to get installation date from registry." << "\n";
 		return FALSE;
 	}
 
@@ -332,7 +343,8 @@ BOOL EnvProbe::IsFreshInstall() const
 
 BOOL EnvProbe::IsLowEndMachine() const
 {
-	SYSTEM_INFO si; GetSystemInfo(&si);
+	SYSTEM_INFO si = { 0 };
+	GetSystemInfo(&si);
 
 	if (si.dwNumberOfProcessors < 2)
 		return TRUE;
@@ -349,7 +361,10 @@ BOOL EnvProbe::HasNoUSBDevices() const
 	);
 
 	if (deviceInfo == INVALID_HANDLE_VALUE)
+	{
+		std::cout << "Error, bad handle." << "\n";
 		return FALSE;
+	}
 
 	SP_DEVINFO_DATA deviceData = { sizeof(SP_DEVINFO_DATA) };
 	DWORD deviceCount = 0;
@@ -364,6 +379,8 @@ BOOL EnvProbe::HasNoUSBDevices() const
 		}
 	}
 
+	//std::cout << "Device count : " << deviceCount << "\n";
+
 	SetupDiDestroyDeviceInfoList(deviceInfo);
 
 	return deviceCount < 2;
@@ -372,11 +389,18 @@ BOOL EnvProbe::HasNoUSBDevices() const
 
 void EnvProbe::DisplayResultFlags(const Result& Result) const
 {
-	std::cout << "Flags :\n";
-	for (std::string_view flag : Result.Flags)
+
+	if (!Result.Flags.empty())
 	{
-		std::cout << flag << "\n";
+
+		std::cout << "Flags :\n";
+		for (std::string_view flag : Result.Flags)
+		{
+			std::cout << flag << "\n";
+		}
 	}
+
+	std::cout << "Environement scored : " << Result.Score << "\n";
 }
 
 
@@ -385,20 +409,20 @@ EnvProbe::Result EnvProbe::Analyze() const
 	Result probeResults;
 
 
-	std::cout << "Analysing environement..." << "\n";
+	std::cout << "Analyzing environement..." << "\n";
 
 	if (IsDebuggerPresentPEB())
 	{
 		probeResults.Score = 100;
 		probeResults.Flags.push_back("CRITICAL : Debugger attached (PEB)");
-		return probeResults;
+		// return probeResults;
 	}
 
 	if (IsSandBoxed())
 	{
 		probeResults.Score = 100;
 		probeResults.Flags.push_back("CRITICAL : Sandbox DLL detected");
-		return probeResults;
+		// return probeResults;
 	}
 
 	if (IsHypervisorCPUID())

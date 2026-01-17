@@ -22,3 +22,4 @@ std::string GetCurrentTimestamp();
 std::string WStringToString(const std::wstring& w);
 ULONG GetPETimeStamp(const std::wstring& path);
 std::wstring FormatHexWString(uint64_t v);
+const char* stristr(const char* haystack, const char* needle);

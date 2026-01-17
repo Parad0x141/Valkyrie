@@ -1,6 +1,6 @@
 ﻿#pragma once
 #include "Common.hpp"
-#include "Helper.hpp"
+#include "Helpers.hpp"
 #include <dbghelp.h>
 
 #include "../Valkyrie/External/Json/json.hpp"

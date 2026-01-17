@@ -25,15 +25,15 @@ public:
 
 
 private:
-	BOOL IsHypervisorCPUID() const;
-	BOOL IsBlacklistedManufacturer() const;
-	BOOL IsBlacklistedMAC() const;
-	BOOL IsSandBoxed() const;
-	BOOL IsDebuggerProcess() const;
-	BOOL IsDebuggerPresentPEB() const;
-	BOOL IsDebuggerPresentTiming() const;
-	BOOL IsFreshInstall() const;
-	BOOL IsLowEndMachine() const;
-	BOOL HasNoUSBDevices() const;
+	[[nodiscard]] BOOL IsHypervisorCPUID() const;
+	[[nodiscard]] BOOL IsBlacklistedManufacturer() const;
+	[[nodiscard]] BOOL IsBlacklistedMAC() const;
+	[[nodiscard]] BOOL IsSandBoxed() const;
+	[[nodiscard]] BOOL IsDebuggerProcess() const;
+	[[nodiscard]] BOOL IsDebuggerPresentPEB() const;
+	[[nodiscard]] BOOL IsDebuggerPresentTiming() const;
+	[[nodiscard]] BOOL IsFreshInstall() const;
+	[[nodiscard]] BOOL IsLowEndMachine() const;
+	[[nodiscard]] BOOL HasNoUSBDevices() const;
 	
 };

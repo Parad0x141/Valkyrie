@@ -8,7 +8,7 @@
 
 
 #include "Common.hpp"
-#include "Helper.hpp"
+#include "Helpers.hpp"
 #include "Args.hpp"
 #include "PEUtils.hpp"
 #include "ValkyrieMapper.hpp"
@@ -16,9 +16,14 @@
 #include "Init.hpp"
 #include "Resolver.hpp"
 #include "XorLog.hpp"
+#include "EnvProbe.hpp"
 
 
 
+
+extern "C" {
+	void __asan_init(); // To ensure address sanitizer is running
+}
 
 
 static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMapper& mapper, Args& args)
@@ -116,10 +121,13 @@ static void MapDriver(IntelLoader& loader, StealthKit& stealthKit, ValkyrieMappe
 // Entry point
 int wmain(int argc, wchar_t* arvg[])
 {
+	XorLog::EnableANSI();
 
 	Args args = ParseArgs(__argc, __wargv);
 
-	XorLog::EnableANSI();
+
+	EnvProbe probe;
+	auto result = probe.Analyze();
 
 	if (args.help)
 	{

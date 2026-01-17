@@ -145,7 +145,7 @@
     <ClInclude Include="Common.hpp" />
     <ClInclude Include="EnvProbe.hpp" />
     <ClInclude Include="Experimental.hpp" />
-    <ClInclude Include="Helper.hpp" />
+    <ClInclude Include="Helpers.hpp" />
     <ClInclude Include="Init.hpp" />
     <ClInclude Include="IntelDriver.hpp" />
     <ClInclude Include="IntelLoader.hpp" />
