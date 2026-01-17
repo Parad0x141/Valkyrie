@@ -1,6 +1,10 @@
 ﻿#pragma once
+
+#include <Windows.h>
 #include "Common.hpp"
 #include "IntelLoader.hpp"
+#include "ValkStatus.hpp"
+#include "Win.hpp"
 
 class StealthKit
 {

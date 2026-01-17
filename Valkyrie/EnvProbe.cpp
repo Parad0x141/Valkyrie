@@ -1,411 +1,456 @@
+// Code by Cyril "Parad0x141" Bouvier - 2026
 #include "EnvProbe.hpp"
 
+#include <cstdint>
+#include <corecrt.h>
+#include <string.h>
+#include <iphlpapi.h>
+#include <IPTypes.h>
+#include <SetupAPI.h>
+#include <TlHelp32.h>
+#include <Windows.h>
+#include <cstdlib>
+#include <ctime>
+#include <intrin.h>
+#include <vector>
+
+#include "Helper.hpp"
+#include "XorLog.hpp" 
+#include <string>
+#include <iostream>
+#include <string_view>
+
+#pragma comment(lib, "iphlpapi.lib")
+#pragma comment(lib, "setupapi.lib")
 
 BOOL EnvProbe::IsHypervisorCPUID() const
 {
-    int cpuInfo[4];
-    __cpuid(cpuInfo, 1);
+	int cpuInfo[4];
+	__cpuid(cpuInfo, 1);
 
-    // Check bit 31 (hypervisor present)
-    if (!((cpuInfo[2] >> 31) & 1))
-        return FALSE;
+	if (!((cpuInfo[2] >> 31) & 1))
+		return FALSE;
 
-    // If present, check vendor string (CPUID leaf 0x40000000)
-    __cpuid(cpuInfo, 0x40000000);
+	__cpuid(cpuInfo, 0x40000000);
 
-    // VMware = "VMwareVMware"
-    // VirtualBox = "VBoxVBoxVBox"
-    // Hyper-V = "Microsoft Hv"
-    // KVM = "KVMKVMKVM"
+	char vendor[13] = { 0 };
+	memcpy(vendor, &cpuInfo[1], 4);
+	memcpy(vendor + 4, &cpuInfo[2], 4);
+	memcpy(vendor + 8, &cpuInfo[3], 4);
 
-    char vendor[13] = { 0 };
-    memcpy(vendor, &cpuInfo[1], 4);
-    memcpy(vendor + 4, &cpuInfo[2], 4);
-    memcpy(vendor + 8, &cpuInfo[3], 4);
+	constexpr auto VMWARE = XSTR("VMwareVMware");
+	constexpr auto VBOX = XSTR("VBoxVBoxVBox");
+	constexpr auto KVM = XSTR("KVMKVMKVM");
+	constexpr auto HYPERV = XSTR("Microsoft Hv");
 
-    const char* blacklist[] = { "VMwareVMware", "VBoxVBoxVBox", "KVMKVMKVM", "Microsoft Hv" };
-    for (const auto& v : blacklist)
-        if (strcmp(vendor, v) == 0) return TRUE;
+	if (strcmp(vendor, DecodeSv(VMWARE).data()) == 0 ||
+		strcmp(vendor, DecodeSv(VBOX).data()) == 0 ||
+		strcmp(vendor, DecodeSv(KVM).data()) == 0 ||
+		strcmp(vendor, DecodeSv(HYPERV).data()) == 0)
+		return TRUE;
 
-    return FALSE; // Hypervisor present but not recognized (safer to allow)
+	return FALSE;
 }
 
 BOOL EnvProbe::IsBlacklistedMAC() const
 {
-    ULONG bufLen = 0;
+	ULONG bufLen = 0;
 
-    DWORD result = GetAdaptersInfo(nullptr, &bufLen);
-    if (result != ERROR_BUFFER_OVERFLOW || bufLen == 0)
-        return FALSE;
+	if (GetAdaptersInfo(nullptr, &bufLen) != ERROR_BUFFER_OVERFLOW || bufLen == 0)
+		return FALSE;
 
-    PIP_ADAPTER_INFO info = (PIP_ADAPTER_INFO)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, bufLen);
-    if (!info)
-        return FALSE;
+	std::vector<BYTE> buffer(bufLen, 0);
+	PIP_ADAPTER_INFO info = reinterpret_cast<PIP_ADAPTER_INFO>(buffer.data());
 
-    BOOL found = FALSE;
 
-    struct VendorMAC 
-    {
-        BYTE oui[3];
-        const char* name;
-    };
+	const BYTE VM_OUIS[][3] = {
+		{0x08, 0x00, 0x27},  // VirtualBox
+		{0x00, 0x05, 0x69},  // VMware
+		{0x00, 0x0C, 0x29},  // VMware
+		{0x00, 0x50, 0x56},  // VMware ESXi
+		{0x00, 0x1C, 0x42},  // Parallels
+		{0x00, 0x15, 0x5D},  // Hyper-V
+		{0x00, 0x16, 0x3E},  // Xen
+		{0x52, 0x54, 0x00},  // KVM/QEMU
+	};
 
-    const VendorMAC VM_MACS[] = {
-        {{0x08, 0x00, 0x27}, "VirtualBox"},
-        {{0x00, 0x05, 0x69}, "VMware"},
-        {{0x00, 0x0C, 0x29}, "VMware"},
-        {{0x00, 0x50, 0x56}, "VMware ESXi"},
-        {{0x00, 0x1C, 0x42}, "Parallels"},
-        {{0x00, 0x15, 0x5D}, "Hyper-V"},
-        {{0x00, 0x16, 0x3E}, "Xen"},
-        {{0x52, 0x54, 0x00}, "KVM/QEMU"},
-        {{0x00, 0x1C, 0x14}, "VMware"},
-        {{0x00, 0x1B, 0x21}, "VirtualPC"},
-        {{0x00, 0x0F, 0x4B}, "Virtual Iron"},
-        {{0x00, 0x21, 0xF6}, "Virtual MAC"},
-        {{0x00, 0x24, 0x81}, "Oracle VM"},
-        {{0x0A, 0x00, 0x27}, "VirtualBox (new)"},
-    };
+	if (GetAdaptersInfo(info, &bufLen) == NO_ERROR)
+	{
+		for (PIP_ADAPTER_INFO p = info; p; p = p->Next)
+		{
+			if (p->AddressLength < 3)
+				continue;
 
-    result = GetAdaptersInfo(info, &bufLen);
-    if (result == NO_ERROR)
-    {
-        for (PIP_ADAPTER_INFO p = info; p; p = p->Next)
-        {
-            // Bad if not at least 3 bytes, skip
-            if (p->AddressLength < 3)
-                continue;
+			for (const auto& oui : VM_OUIS)
+			{
+				if (memcmp(p->Address, oui, 3) == 0)
+					return TRUE;
+			}
+		}
+	}
 
-            const BYTE* m = p->Address;
-
-            for (const auto& vendor : VM_MACS)
-            {
-                if (memcmp(m, vendor.oui, 3) == 0)
-                {
-                    found = TRUE;
-                    break;
-                }
-            }
-
-            if (found)
-                break;
-        }
-    }
-
-    HeapFree(GetProcessHeap(), 0, info);
-    return found;
+	return FALSE;
 }
-
 
 BOOL EnvProbe::IsBlacklistedManufacturer() const
 {
-    char manufacturer[256] = { 0 };
-    char model[256] = { 0 };
-    DWORD sz = sizeof(manufacturer);
+	char manufacturer[256] = { 0 };
+	char model[256] = { 0 };
+	DWORD sz = sizeof(manufacturer) - 1;
 
- 
-    if (RegGetValueA(HKEY_LOCAL_MACHINE,
-        R"_(SYSTEM\CurrentControlSet\Control\SystemInformation)_",
-        "SystemManufacturer", RRF_RT_REG_SZ, nullptr, manufacturer, &sz) != ERROR_SUCCESS)
-        return FALSE;
-    
+	constexpr auto REG_PATH = XSTR(R"_(SYSTEM\CurrentControlSet\Control\SystemInformation)_");
+	constexpr auto REG_MANUFACTURER = XSTR("SystemManufacturer");
+	constexpr auto REG_MODEL = XSTR("SystemProductName");
 
+	if (RegGetValueA(HKEY_LOCAL_MACHINE,
+		DecodeSv(REG_PATH).data(),
+		DecodeSv(REG_MANUFACTURER).data(),
+		RRF_RT_REG_SZ, nullptr, manufacturer, &sz) != ERROR_SUCCESS)
+		return FALSE;
 
-    sz = sizeof(model);
-    RegGetValueA(HKEY_LOCAL_MACHINE,
-        R"_(SYSTEM\CurrentControlSet\Control\SystemInformation)_",
-        "SystemProductName", RRF_RT_REG_SZ, nullptr, model, &sz);
+	manufacturer[sz] = '\0'; 
 
-    const char* vmVendors[] = { "VMware", "innotek", "QEMU", "Xen" };
-    for (const auto& vendor : vmVendors)
-    {
-        if (strstr(manufacturer, vendor))
-            return TRUE;
-    }
+	sz = sizeof(model) - 1;
+	RegGetValueA(HKEY_LOCAL_MACHINE,
+		DecodeSv(REG_PATH).data(),
+		DecodeSv(REG_MODEL).data(),
+		RRF_RT_REG_SZ, nullptr, model, &sz);
 
-    const char* vmModels[] = {
-        "VirtualBox",
-        "VMware Virtual Platform",
-        "Virtual Machine",
-        "KVM",
-        "Standard PC"  // QEMU default
-    };
+	model[sz] = '\0';
 
-    for (const auto& vmModel : vmModels)
-    {
-        if (strstr(model, vmModel))
-            return TRUE;
-    }
+	constexpr auto VMWARE = XSTR("VMware");
+	constexpr auto INNOTEK = XSTR("innotek");
+	constexpr auto QEMU = XSTR("QEMU");
+	constexpr auto XEN = XSTR("Xen");
 
-    // Microsoft Corporation + "Virtual Machine" = HyperV
-    if (strstr(manufacturer, "Microsoft Corporation") && strstr(model, "Virtual Machine"))
-        return TRUE;
+	if (strstr(manufacturer, DecodeSv(VMWARE).data()) ||
+		strstr(manufacturer, DecodeSv(INNOTEK).data()) ||
+		strstr(manufacturer, DecodeSv(QEMU).data()) ||
+		strstr(manufacturer, DecodeSv(XEN).data()))
+		return TRUE;
 
-    return FALSE;
+	constexpr auto VBOX_MODEL = XSTR("VirtualBox");
+	constexpr auto VMWARE_MODEL = XSTR("VMware Virtual Platform");
+	constexpr auto VIRTUAL_MACHINE = XSTR("Virtual Machine");
+	constexpr auto KVM_MODEL = XSTR("KVM");
+	constexpr auto STANDARD_PC = XSTR("Standard PC");
+
+	if (strstr(model, DecodeSv(VBOX_MODEL).data()) ||
+		strstr(model, DecodeSv(VMWARE_MODEL).data()) ||
+		strstr(model, DecodeSv(VIRTUAL_MACHINE).data()) ||
+		strstr(model, DecodeSv(KVM_MODEL).data()) ||
+		strstr(model, DecodeSv(STANDARD_PC).data()))
+		return TRUE;
+
+	constexpr auto MICROSOFT = XSTR("Microsoft Corporation");
+	constexpr auto MS_VM_COMBO = XSTR("Virtual Machine");
+
+	if (strstr(manufacturer, DecodeSv(MICROSOFT).data()) &&
+		strstr(model, DecodeSv(MS_VM_COMBO).data()))
+		return TRUE;
+
+	return FALSE;
 }
+
+
 
 BOOL EnvProbe::IsDebuggerProcess() const
 {
-    const wchar_t* debuggers[] = {
-        L"x64dbg.exe", L"x32dbg.exe",
-        L"ollydbg.exe",
-        L"windbg.exe", L"kd.exe",
-        L"idaq64.exe", L"idaq.exe", L"ida64.exe", L"ida.exe",
-        L"processhacker.exe", L"procexp.exe", L"procexp64.exe",
-        L"procmon.exe", L"procmon64.exe",
-        L"tcpview.exe", L"autoruns.exe", L"autorunsc.exe",
-        L"wireshark.exe", L"fiddler.exe",
-        L"filemon.exe", L"regmon.exe",
-        L"importrec.exe", L"lordpe.exe",
-        L"dumpcap.exe",
-        L"hookexplorer.exe", L"ollyice.exe",
-        L"pestudio.exe", L"de4dot.exe",
-        L"ilspy.exe", L"dnspy.exe",
-        L"scylla_x64.exe", L"scylla_x86.exe",
-    };
+	constexpr auto OLLYDBG = XSTR("ollydbg.exe");
+	constexpr auto X64DBG = XSTR("x64dbg.exe");
+	constexpr auto X32DBG = XSTR("x32dbg.exe");
+	constexpr auto IDAQ = XSTR("idaq.exe");
+	constexpr auto IDAQ64 = XSTR("idaq64.exe");
+	constexpr auto WINDBG = XSTR("windbg.exe");
+	constexpr auto DBGVIEW = XSTR("dbgview.exe");
+	constexpr auto PROCEXP = XSTR("procexp.exe");
+	constexpr auto PROCEXP64 = XSTR("procexp64.exe");
+	constexpr auto CHEATENGINE = XSTR("cheatengine.exe");
+	constexpr auto SCYLLA = XSTR("scylla.exe");
+	constexpr auto SCYLLA_X64 = XSTR("scylla_x64.exe");
+	constexpr auto SCYLLA_X86 = XSTR("scylla_x86.exe");
+	constexpr auto IMMUNITY = XSTR("IMMUNITYDEBUGGER.EXE");
+	constexpr auto WIRESHARK = XSTR("Wireshark.exe");
+	constexpr auto DUMPCAP = XSTR("dumpcap.exe");
+	constexpr auto HOOKEXPLORER = XSTR("HookExplorer.exe");
+	constexpr auto IMPORTREC = XSTR("ImportREC.exe");
+	constexpr auto PETOOLS = XSTR("PETools.exe");
+	constexpr auto LORDPE = XSTR("LordPE.exe");
+	constexpr auto SYSINSPECTOR = XSTR("SysInspector.exe");
+	constexpr auto PROCMON = XSTR("procmon.exe");
+	constexpr auto TCPVIEW = XSTR("tcpview.exe");
+	constexpr auto AUTORUNS = XSTR("autoruns.exe");
+	constexpr auto AUTORUNSC = XSTR("autorunsc.exe");
+	constexpr auto FILEMON = XSTR("filemon.exe");
+	constexpr auto REGMON = XSTR("regmon.exe");
+	constexpr auto IDA = XSTR("ida.exe");
+	constexpr auto IDA64 = XSTR("ida64.exe");
+
+	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (snapshot == INVALID_HANDLE_VALUE)
+		return FALSE;
+
+	struct Guard 
+	{
+		HANDLE h;
+		~Guard() { if (h != INVALID_HANDLE_VALUE) CloseHandle(h); }
+
+	} guard{ snapshot };
+
+	PROCESSENTRY32W pe = { sizeof(pe) };
+
+	if (!Process32FirstW(snapshot, &pe))
+		return FALSE;
+
+	do {
+		std::string exeName = WStringToString(pe.szExeFile);
 
 
+		// Courtesy of Kimi AI
+		if (_stricmp(exeName.c_str(), DecodeSv(OLLYDBG).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(X64DBG).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(X32DBG).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(IDAQ).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(IDAQ64).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(WINDBG).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(DBGVIEW).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(PROCEXP).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(PROCEXP64).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(CHEATENGINE).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(SCYLLA).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(SCYLLA_X64).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(SCYLLA_X86).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(IMMUNITY).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(WIRESHARK).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(DUMPCAP).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(HOOKEXPLORER).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(IMPORTREC).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(PETOOLS).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(LORDPE).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(SYSINSPECTOR).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(PROCMON).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(TCPVIEW).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(AUTORUNS).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(AUTORUNSC).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(FILEMON).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(REGMON).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(IDA).data()) == 0 ||
+			_stricmp(exeName.c_str(), DecodeSv(IDA64).data()) == 0)
 
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snapshot == INVALID_HANDLE_VALUE)
-        return FALSE;
+			return TRUE;
 
-    PROCESSENTRY32W pe = { sizeof(pe) };
-    BOOL found = FALSE;
+	} while (Process32NextW(snapshot, &pe));
 
-    if (Process32FirstW(snapshot, &pe))
-    {
-        do {
-            for (const auto& dbg : debuggers)
-            {
-                if (_wcsicmp(pe.szExeFile, dbg) == 0)
-                {
-                    found = TRUE;
-                    goto cleanup;
-                }
-            }
-        } while (Process32NextW(snapshot, &pe));
-    }
-
-cleanup:
-    CloseHandle(snapshot);
-    return found;
+	return FALSE;
 }
+
 
 BOOL EnvProbe::IsSandBoxed() const
 {
-    const char* sandboxDlls[] = {
-        "SbieDll.dll",      // Sandboxie
-        "api_log.dll",      // SunBelt Sandbox
-        "dir_watch.dll",    // Sandboxie
-        "dbghelp.dll",      // Potentiel debugger attachment
-        "pstorec.dll",      // Protected Storage
-    };
+	constexpr auto SBIE = XSTR("SbieDll.dll");
+	constexpr auto API_LOG = XSTR("api_log.dll");
+	constexpr auto DIR_WATCH = XSTR("dir_watch.dll");
 
-    for (const auto& dll : sandboxDlls)
-        if (GetModuleHandleA(dll)) return TRUE;
 
-    return FALSE;
+
+	if (GetModuleHandleA(DecodeSv(SBIE).data())) return TRUE;
+	if (GetModuleHandleA(DecodeSv(API_LOG).data())) return TRUE;
+	if (GetModuleHandleA(DecodeSv(DIR_WATCH).data())) return TRUE;
+
+	return FALSE;
 }
 
 BOOL EnvProbe::IsDebuggerPresentPEB() const
 {
-
-    return *(uint8_t*)(__readgsqword(0x60) + 0x2) != 0;
-
+#ifdef _WIN64
+	
+	return *(uint8_t*)(__readgsqword(0x60) + 0x2) != 0;
+#else
+	return IsDebuggerPresent();
+#endif
 }
 
 BOOL EnvProbe::IsDebuggerPresentTiming() const
 {
-   
-    auto t1 = __rdtsc();
-    volatile int x = 0;
-    for (int i = 0; i < 100; ++i) x++;
-    auto t2 = __rdtsc();
+	// FIX: Drastically increased thresholds & iterations to reduce false positives,
+	// this is not the most accurat test and will have minimal impact on the final score
+	// to compensate inaccuracy.
+	DWORD64 t1 = __rdtsc();
+	volatile int x = 0;
 
-    if ((t2 - t1) > 5000) // high threshold, trying to avoid false p
-        return TRUE;
+	for (int i = 0; i < 1000; ++i) x++;
+	DWORD64 t2 = __rdtsc();
 
-    // 2. GetTickCount64 vs QueryPerformanceCounter discrepancy
-    UINT64 tick1 = GetTickCount64();
-    LARGE_INTEGER qpc1;
-    QueryPerformanceCounter(&qpc1);
 
-    Sleep(10); // 10ms sleep
+	if ((t2 - t1) > 50000)
+		return TRUE;
 
-    UINT64 tick2 = GetTickCount64();
-    LARGE_INTEGER qpc2;
-    QueryPerformanceCounter(&qpc2);
 
-    LARGE_INTEGER freq;
-    QueryPerformanceFrequency(&freq);
+	UINT64 tick1 = GetTickCount64();
+	LARGE_INTEGER qpc1, qpc2, freq;
 
-    UINT64 tickDelta = tick2 - tick1;
-    UINT64 qpcDelta = ((qpc2.QuadPart - qpc1.QuadPart) * 1000) / freq.QuadPart;
+	QueryPerformanceCounter(&qpc1);
 
-    // If difference > 50ms for a 10ms sleep -> debugger stepping
-    if (llabs((long long)(tickDelta - qpcDelta)) > 50)
-        return TRUE;
+	Sleep(50);
 
-    return FALSE;
+	UINT64 tick2 = GetTickCount64();
+	QueryPerformanceCounter(&qpc2);
+	QueryPerformanceFrequency(&freq);
+
+	UINT64 tickDelta = tick2 - tick1;
+	UINT64 qpcDelta = ((qpc2.QuadPart - qpc1.QuadPart) * 1000) / freq.QuadPart;
+
+	if (llabs((long long)(tickDelta - qpcDelta)) > 100)
+		return TRUE;
+
+	return FALSE;
 }
+
 BOOL EnvProbe::IsFreshInstall() const
 {
-    DWORD installDate = 0; // Unix timestamp
-    DWORD sz = sizeof(installDate);
+	constexpr auto REG_PATH = XSTR(R"_(SOFTWARE\Microsoft\Windows NT\CurrentVersion)_");
+	constexpr auto REG_INSTALL = XSTR("InstallDate");
 
-    if (RegGetValueA(HKEY_LOCAL_MACHINE,
-        R"_(SOFTWARE\Microsoft\Windows NT\CurrentVersion)_",
-        "InstallDate", RRF_RT_REG_DWORD, nullptr, &installDate, &sz) != ERROR_SUCCESS)
-    {
-        return FALSE;
-    }
+	DWORD installDate = 0;
+	DWORD sz = sizeof(installDate);
 
-    time_t now = time(nullptr);
+	if (RegGetValueA(HKEY_LOCAL_MACHINE,
+		DecodeSv(REG_PATH).data(),
+		DecodeSv(REG_INSTALL).data(),
+		RRF_RT_REG_DWORD, nullptr, &installDate, &sz) != ERROR_SUCCESS)
+	{
+		return FALSE;
+	}
 
-    UINT64 secondsSinceInstall = now - installDate;
-    UINT64 daysSinceInstall = secondsSinceInstall / (24 * 3600);
+	time_t now = time(nullptr);
+	UINT64 daysSinceInstall = (now - installDate) / (24 * 3600);
 
-    // Fresh installs (< 7 days) are suspicious
-    return daysSinceInstall < 7;
+
+	return daysSinceInstall < 3;
 }
 
-BOOL EnvProbe::HasSuspiciousDiskSize() const
-{
-    ULARGE_INTEGER freeBytesAvailable, totalBytes, totalFreeBytes;
-
-    if (!GetDiskFreeSpaceExA("C:\\", &freeBytesAvailable, &totalBytes, &totalFreeBytes))
-        return FALSE;
-
-    UINT64 totalGB = totalBytes.QuadPart / (1024ULL * 1024 * 1024);
-
-    return totalGB < 80;
-}
 
 BOOL EnvProbe::IsLowEndMachine() const
 {
-    SYSTEM_INFO si; GetSystemInfo(&si);
+	SYSTEM_INFO si; GetSystemInfo(&si);
 
-    if (si.dwNumberOfProcessors < 2)
-        return TRUE;
+	if (si.dwNumberOfProcessors < 2)
+		return TRUE;
 
-    MEMORYSTATUSEX ms = { sizeof(ms) };
+	MEMORYSTATUSEX ms = { sizeof(ms) };
 
-    return GlobalMemoryStatusEx(&ms) && ms.ullTotalPhys < 4ULL * 1024 * 1024 * 1024;
+	return GlobalMemoryStatusEx(&ms) && ms.ullTotalPhys < 6ULL * 1024 * 1024 * 1024;
 }
 
 BOOL EnvProbe::HasNoUSBDevices() const
 {
-    // Real machines usually have USB devices (mouse, keyboard, etc.)
-    // VMs often have none or only virtual USB controllers
+	HDEVINFO deviceInfo = SetupDiGetClassDevsA(
+		nullptr, "USB", nullptr, DIGCF_PRESENT | DIGCF_ALLCLASSES
+	);
 
-    HDEVINFO deviceInfo = SetupDiGetClassDevsA(
-        nullptr,  // All device classes
-        "USB",    // Enumerator (USB devices only)
-        nullptr,
-        DIGCF_PRESENT | DIGCF_ALLCLASSES
-    );
+	if (deviceInfo == INVALID_HANDLE_VALUE)
+		return FALSE;
 
-    if (deviceInfo == INVALID_HANDLE_VALUE)
-        return FALSE;
+	SP_DEVINFO_DATA deviceData = { sizeof(SP_DEVINFO_DATA) };
+	DWORD deviceCount = 0;
 
-    SP_DEVINFO_DATA deviceData = { sizeof(SP_DEVINFO_DATA) };
-    DWORD deviceCount = 0;
+	for (DWORD i = 0; SetupDiEnumDeviceInfo(deviceInfo, i, &deviceData); i++)
+	{
+		char deviceID[256] = { 0 };
+		if (SetupDiGetDeviceInstanceIdA(deviceInfo, &deviceData, deviceID, sizeof(deviceID), nullptr))
+		{
+			if (!strstr(deviceID, "ROOT_HUB") && !strstr(deviceID, "USB\\\\ROOT"))
+				deviceCount++;
+		}
+	}
 
-    for (DWORD i = 0; SetupDiEnumDeviceInfo(deviceInfo, i, &deviceData); i++)
-    {
-        // Check if it's a real USB device (not just USB controller)
-        char deviceID[256] = { 0 };
-        if (SetupDiGetDeviceInstanceIdA(deviceInfo, &deviceData, deviceID, sizeof(deviceID), nullptr))
-        {
-            // Skip USB Root Hubs and Host Controllers (present even in VMs)
-            if (strstr(deviceID, "ROOT_HUB") || strstr(deviceID, "USB\\ROOT"))
-                continue;
+	SetupDiDestroyDeviceInfoList(deviceInfo);
 
-            deviceCount++;
-        }
-    }
-
-    SetupDiDestroyDeviceInfoList(deviceInfo);
-
-    // Less than 2 USB devices (excluding hubs) is suspicious
-    return deviceCount < 2;
+	return deviceCount < 2;
 }
+
+
+void EnvProbe::DisplayResultFlags(const Result& Result) const
+{
+	std::cout << "Flags :\n";
+	for (std::string_view flag : Result.Flags)
+	{
+		std::cout << flag << "\n";
+	}
+}
+
 
 EnvProbe::Result EnvProbe::Analyze() const
 {
-    Result probeResults;
+	Result probeResults;
 
-    if (IsDebuggerPresentPEB())
-    {
-        probeResults.Score = 100;
-        probeResults.Flags.push_back("Debugger attached (PEB)");
 
-        return probeResults; // abort
-    }
+	std::cout << "Analysing environement..." << "\n";
 
-    
-    if (IsHypervisorCPUID())
-    {
-        probeResults.Score += 40;
-        probeResults.Flags.push_back("Hypervisor CPUID detected");
-    }
+	if (IsDebuggerPresentPEB())
+	{
+		probeResults.Score = 100;
+		probeResults.Flags.push_back("CRITICAL : Debugger attached (PEB)");
+		return probeResults;
+	}
 
-    if (IsBlacklistedManufacturer())
-    {
-        probeResults.Score += 35;
-        probeResults.Flags.push_back("VM manufacturer detected");
-    }
+	if (IsSandBoxed())
+	{
+		probeResults.Score = 100;
+		probeResults.Flags.push_back("CRITICAL : Sandbox DLL detected");
+		return probeResults;
+	}
 
-    
-    if (IsBlacklistedMAC())
-    {
-        probeResults.Score += 25;
-        probeResults.Flags.push_back("VM MAC address detected");
-    }
+	if (IsHypervisorCPUID())
+	{
+		probeResults.Score += 40;
+		probeResults.Flags.push_back("Hypervisor CPUID detected");
+	}
 
-    if (IsSandBoxed())
-    {
-        probeResults.Score += 30;
-        probeResults.Flags.push_back("Sandbox DLL detected");
-    }
+	if (IsBlacklistedManufacturer())
+	{
+		probeResults.Score += 35;
+		probeResults.Flags.push_back("VM manufacturer detected");
+	}
 
-    if (IsDebuggerProcess())
-    {
-        probeResults.Score += 25;
-        probeResults.Flags.push_back("Debugger process detected");
-    }
+	if (IsBlacklistedMAC())
+	{
+		probeResults.Score += 25;
+		probeResults.Flags.push_back("VM MAC address detected");
+	}
 
-    // Low confidence because of potentil false P
-    if (IsDebuggerPresentTiming())
-    {
-        probeResults.Score += 10;
-        probeResults.Flags.push_back("Timing anomaly detected");
-    }
+	if (IsDebuggerProcess())
+	{
+		probeResults.Score += 25;
+		probeResults.Flags.push_back("Debugger process detected");
+	}
 
-    if (IsFreshInstall())
-    {
-        probeResults.Score += 15;
-        probeResults.Flags.push_back("Fresh install detected");
-    }
+	if (IsDebuggerPresentTiming())
+	{
+		probeResults.Score += 5; // Less weight, inaccurate test
+		probeResults.Flags.push_back("Timing anomaly (low confidence)");
+	}
 
-    if (IsLowEndMachine())
-    {
-        probeResults.Score += 20;
-        probeResults.Flags.push_back("Low-end hardware detected");
-    }
+	if (IsFreshInstall())
+	{
+		probeResults.Score += 15;
+		probeResults.Flags.push_back("Fresh install detected");
+	}
 
-    if (HasSuspiciousDiskSize())
-    {
-        probeResults.Score += 15;
-        probeResults.Flags.push_back("Small disk size detected");
-    }
+	if (IsLowEndMachine())
+	{
+		probeResults.Score += 20;
+		probeResults.Flags.push_back("Low-end hardware detected");
+	}
 
-    if (HasNoUSBDevices())
-    {
-        probeResults.Score += 10;
-        probeResults.Flags.push_back("No USB devices found");
-    }
+	if (HasNoUSBDevices())
+	{
+		probeResults.Score += 10;
+		probeResults.Flags.push_back("No USB devices found");
+	}
 
-    return probeResults;
+	DisplayResultFlags(probeResults);
+
+
+	return probeResults;
 }

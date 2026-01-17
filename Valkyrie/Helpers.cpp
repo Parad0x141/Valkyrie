@@ -1,6 +1,14 @@
 ﻿#include "Helper.hpp"
 #include <filesystem>
 
+#include <format>
+#include <ios>
+
+#include "PEUtils.hpp"
+#include "IntelDriver.hpp"
+#include <iomanip>
+#include <Windows.h>
+
 BOOL IsAdmin()
 {
     BOOL admin = FALSE;
@@ -163,24 +171,6 @@ BOOL DeleteDriverFile()
     }
 }
 
-BOOLEAN bDataCompare(const BYTE* pData, const BYTE* bMask, const char* szMask) 
-{
-    for (; *szMask; ++szMask, ++pData, ++bMask)
-        if (*szMask == 'x' && *pData != *bMask)
-            return 0;
-    return (*szMask) == 0;
-}
-
-
-
-uintptr_t FindPattern(uintptr_t dwAddress, uintptr_t dwLen, BYTE* bMask, const char* szMask)
-{
-    size_t max_len = dwLen - strlen(szMask);
-    for (uintptr_t i = 0; i < max_len; i++)
-        if (bDataCompare((BYTE*)(dwAddress + i), bMask, szMask))
-            return (uintptr_t)(dwAddress + i);
-    return 0;
-}
 
 std::string FormatHex(uint64_t value)
 {
@@ -188,7 +178,6 @@ std::string FormatHex(uint64_t value)
     ss << "0x" << std::hex << std::uppercase << value;
     return ss.str();
 }
-
 
 
 std::string GetCurrentTimestamp()
@@ -202,4 +191,4 @@ std::string WStringToString(const std::wstring& w)
     return std::filesystem::path(w).string();
 }
 
-std::wstring ToHexW(uint64_t v) { return L"0x" + std::to_wstring(v); }
+std::wstring FormatHexWString(uint64_t v) { return L"0x" + std::to_wstring(v); }

@@ -38,7 +38,14 @@ namespace StringTable
 
 
 
+	//----------------------------------------------------------------------------
+	// EnvProbe.cpp string
+	//----------------------------------------------------------------------------
 
+	inline constexpr auto PROBE_VMWARE = XSTR("VMwareVMware");
+	inline constexpr auto PROBE_VBOX = XSTR("VBoxVBoxVBox");
+	inline constexpr auto PROBE_KVM = XSTR("KVMKVMKVM");
+	inline constexpr auto PROBE_HYPERV = XSTR("Microsoft Hv");
 
 
 } // namespace StringTable

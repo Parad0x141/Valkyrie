@@ -1,15 +1,9 @@
 #pragma once
 
-#include "Common.hpp"
-
-#include <intrin.h>
-#include <iphlpapi.h>
-#include <tlhelp32.h> 
-#include <setupapi.h>
+#include <Windows.h>
 #include <vector>
+#include <string>
 
-#pragma comment(lib, "iphlpapi.lib")
-#pragma comment(lib, "setupapi.lib")
 
 
 
@@ -27,6 +21,8 @@ public:
 
 
 	Result Analyze() const;
+	void DisplayResultFlags(const Result& Result) const;
+
 
 private:
 	BOOL IsHypervisorCPUID() const;
@@ -37,7 +33,6 @@ private:
 	BOOL IsDebuggerPresentPEB() const;
 	BOOL IsDebuggerPresentTiming() const;
 	BOOL IsFreshInstall() const;
-	BOOL HasSuspiciousDiskSize() const;
 	BOOL IsLowEndMachine() const;
 	BOOL HasNoUSBDevices() const;
 	

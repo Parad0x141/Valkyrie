@@ -257,6 +257,8 @@
 					LOG_ERROR("Failed to restore original bytes.");
 					// Not returning false here, the call may have succeded despite the fact
 					// that we cannot unhook the function for whatever reason.
+
+					// TODO : Notify user and exit after cleaning if nothing crashed. Unknown behavior at this point.
 				}
 				
 

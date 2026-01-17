@@ -34,7 +34,7 @@
 
 // Example: inline constexpr auto S = XSTR("test");
 // Type of S is Encrypted<5> (includes the null terminator)
-#define XSTR(s) (XorLog::Encrypt(s))
+#define XSTR(s) (XorLog::Encode(s))
 
 
 // Lazy man macros
@@ -78,7 +78,7 @@ namespace XorLog {
     }
 
     template<std::size_t N, uint64_t Seed = CompileTimeSeed()>
-    constexpr auto Encrypt(const char(&plain)[N]) noexcept {
+    constexpr auto Encode(const char(&plain)[N]) noexcept {
         Encrypted<N> e{};
 
         for (std::size_t i = 0; i < N; ++i) 
@@ -96,7 +96,7 @@ namespace XorLog {
     }
 
     template<std::size_t N, uint64_t Seed = CompileTimeSeed()>
-    inline std::string Decrypt(const Encrypted<N>& e) 
+    inline std::string Decode(const Encrypted<N>& e) 
     {
         std::array<char, N> buf = e.data;
 
@@ -118,7 +118,7 @@ namespace XorLog {
 
     // Optimized
     template<std::size_t N>
-    inline std::string_view DecryptView(const Encrypted<N>& e)
+    inline std::string_view DecodeSv(const Encrypted<N>& e)
     {
         thread_local std::array<char, N> buf;   
         buf = e.data;                           
@@ -135,7 +135,7 @@ namespace XorLog {
 
         return { buf.data(), (N > 0 ? N - 1 : 0) };
     }
-
+    
     inline void EnableANSI()
     {
         HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -175,13 +175,13 @@ namespace XorLog {
     class Logger 
     {
         // compile-time prefix & tags
-        static constexpr auto PREFIX = Encrypt("[Valkyrie] ");
+        static constexpr auto PREFIX = Encode("[Valkyrie] ");
 
-        static constexpr auto TAG_INFO = Encrypt("[i] ");
-        static constexpr auto TAG_SUCC = Encrypt("[+] ");
-        static constexpr auto TAG_WARN = Encrypt("[!] ");
-        static constexpr auto TAG_ERR = Encrypt("[-] ");
-        static constexpr auto TAG_DBG = Encrypt("[*] ");
+        static constexpr auto TAG_INFO = Encode("[i] ");
+        static constexpr auto TAG_SUCC = Encode("[+] ");
+        static constexpr auto TAG_WARN = Encode("[!] ");
+        static constexpr auto TAG_ERR = Encode("[-] ");
+        static constexpr auto TAG_DBG = Encode("[*] ");
 
 
 
@@ -194,7 +194,7 @@ namespace XorLog {
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Green);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_SUCC);
+            std::cout << DecodeSv(PREFIX) << DecodeSv(TAG_SUCC);
             ResetColor();
             std::cout << oss.str() << '\n';
 
@@ -206,10 +206,10 @@ namespace XorLog {
             std::lock_guard<std::mutex> lock(GetMutex());
 
             std::ostringstream oss;
-            oss << Decrypt(encrypted);
+            oss << DecodeSv(encrypted);
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Green);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_SUCC);
+            std::cout << DecodeSv(PREFIX) << DecodeSv(TAG_SUCC);
             ResetColor();
             std::cout << oss.str() << '\n';
         }
@@ -223,7 +223,7 @@ namespace XorLog {
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Blue);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_INFO);
+            std::cout << DecodeSv(PREFIX) << DecodeSv(TAG_INFO);
             ResetColor();
             std::cout << oss.str() << '\n';
         }
@@ -235,10 +235,10 @@ namespace XorLog {
 
 
             std::ostringstream oss;
-            oss << Decrypt(encrypted);
+            oss << DecodeSv(encrypted);
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Blue);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_INFO);
+            std::cout << DecodeSv(PREFIX) << DecodeSv(TAG_INFO);
             ResetColor();
             std::cout << oss.str() << '\n';
         }
@@ -252,7 +252,7 @@ namespace XorLog {
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Yellow);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_WARN);
+            std::cout << DecodeSv(PREFIX) << DecodeSv(TAG_WARN);
             ResetColor();
             std::cout << oss.str() << '\n';
         }
@@ -264,10 +264,10 @@ namespace XorLog {
             std::lock_guard<std::mutex> lock(GetMutex());
 
             std::ostringstream oss;
-            oss << Decrypt(encrypted);
+            oss << DecodeSv(encrypted);
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Yellow);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_WARN);
+            std::cout << DecodeSv(PREFIX) << DecodeSv(TAG_WARN);
             ResetColor();
             std::cout << oss.str() << '\n';
         }
@@ -281,7 +281,7 @@ namespace XorLog {
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Red);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_ERR);
+            std::cout << DecodeSv(PREFIX) << DecodeSv(TAG_ERR);
             ResetColor();
             std::cout << oss.str() << '\n';
         }
@@ -293,10 +293,10 @@ namespace XorLog {
 
 
             std::ostringstream oss;
-            oss << Decrypt(encrypted);
+            oss << DecodeSv(encrypted);
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Red);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_ERR);
+            std::cout << DecodeSv(PREFIX) << DecodeSv(TAG_ERR);
             ResetColor();
             std::cout << oss.str() << '\n';
         }
@@ -310,7 +310,7 @@ namespace XorLog {
             std::ostringstream oss;
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Magenta);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_DBG);
+            std::cout << DecodeSv(PREFIX) << DecodeSv(TAG_DBG);
             ResetColor();
             std::cout << oss.str() << '\n';
         }
@@ -322,15 +322,15 @@ namespace XorLog {
 
 
             std::ostringstream oss;
-            oss << Decrypt(encrypted);
+            oss << DecodeSv(encrypted);
             ((oss << std::forward<Args>(args)), ...);
             SetColor(Color::Magenta);
-            std::cout << Decrypt(PREFIX) << Decrypt(TAG_DBG);
+            std::cout << DecodeSv(PREFIX) << DecodeSv(TAG_DBG);
             ResetColor();
             std::cout << oss.str() << '\n';
         }
 
-        static constexpr auto HELLOWORLD = Encrypt("Hello XorLog !");
+        static constexpr auto HELLOWORLD = Encode("Hello XorLog !");
 
     };
 

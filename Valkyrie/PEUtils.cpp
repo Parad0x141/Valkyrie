@@ -430,9 +430,9 @@ import.ordinals.push_back(0);
 			for (int k = 0; k < 8; ++k) name[k] = static_cast<wchar_t>(sec.Name[k]);
 
 			std::wstring line = L"  +- [" + std::wstring(name, 8) + L"]  "
-				L"RVA : " + ToHexW(sec.VirtualAddress) + L"  "
-				L"Size : " + ToHexW(sec.SizeOfRawData) + L"  "
-				L"Flags : " + ToHexW(sec.Characteristics);
+				L"RVA : " + FormatHexWString(sec.VirtualAddress) + L"  "
+				L"Size : " + FormatHexWString(sec.SizeOfRawData) + L"  "
+				L"Flags : " + FormatHexWString(sec.Characteristics);
 			LOG_INFO(line);
 
 		}

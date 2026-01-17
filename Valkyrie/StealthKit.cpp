@@ -1,4 +1,6 @@
-﻿#include "StealthKit.hpp"
+﻿#define NOMINMAX
+
+#include "StealthKit.hpp"
 #include <algorithm>
 #include "Win.hpp"
 

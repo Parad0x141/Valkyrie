@@ -32,6 +32,8 @@
  */
 
 #pragma once
+#define NOMINMAX
+
 
 #include <vector>
 #include <optional>
@@ -39,6 +41,7 @@
 #include <chrono>
 #include <random>
 #include <cassert>
+#include <algorithm>
 
 
 /// <summary>

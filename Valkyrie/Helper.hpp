@@ -1,9 +1,9 @@
 ﻿#pragma once
+#define NOMINMAX // Avoid min/max redef by Windows.h
+#include <Windows.h>
+#include <string>
+#include <cstdint>
 
-#include "Common.hpp"
-#include "IntelDriver.hpp"
-#include "PEUtils.hpp"
-#include <chrono>
 
 
 
@@ -17,11 +17,8 @@ VOID EnumerateSyscalls();
 VOID DumpBytes(const char* name, const uint8_t* bytes, size_t len);
 
 
-
-uintptr_t FindPattern(uintptr_t dwAddress, uintptr_t dwLen, BYTE* bMask, const char* szMask);
-BOOLEAN bDataCompare(const BYTE* pData, const BYTE* bMask, const char* szMask);
 std::string FormatHex(uint64_t value);
 std::string GetCurrentTimestamp();
 std::string WStringToString(const std::wstring& w);
 ULONG GetPETimeStamp(const std::wstring& path);
-std::wstring ToHexW(uint64_t v);
+std::wstring FormatHexWString(uint64_t v);
