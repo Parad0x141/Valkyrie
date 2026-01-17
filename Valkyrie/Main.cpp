@@ -126,9 +126,6 @@ int wmain(int argc, wchar_t* arvg[])
 	Args args = ParseArgs(__argc, __wargv);
 
 
-	EnvProbe probe;
-	auto result = probe.Analyze();
-
 	if (args.help)
 	{
 		PrintHelp();
@@ -157,21 +154,16 @@ int wmain(int argc, wchar_t* arvg[])
 	Resolver resolver(loader);
 	ValkyrieMapper mapper(loader);
 	
-	LOG_INFO("Dropping driver...\n");
+
 	if (!WriteDriverFile()) 	
 		return EXIT_FAILURE;
 	
-
-
-	LOG_INFO("Loading vulnerable driver...\n");
 	if (!loader.LoadVulnDriver())
 	{
 		DeleteDriverFile();
 		return EXIT_FAILURE;
 	}
 
-	
-	LOG_INFO("Opening device...");
 	if (!loader.OpenDevice()) 
 	{
 		loader.UnloadVulnDriver();
@@ -196,8 +188,7 @@ int wmain(int argc, wchar_t* arvg[])
 
 
 	LOG_SUCCESS("All kernel offsets successfully resolved, mapper ready...");
-	Sleep(3000); // TODO Add more and Randomize
-
+	Sleep(3000); // TODO Add more and randomize 
 	
 	MapDriver(loader, stealthKit, mapper, args);
 

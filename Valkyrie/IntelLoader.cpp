@@ -318,7 +318,7 @@ UINT64 IntelLoader::MapIoSpace(uint64_t physical_address, uint32_t size) const
 BOOL IntelLoader::UnmapIoSpace(uint64_t address, uint32_t size) const
 {
 	if (!address || !size)
-		return false;
+		return FALSE;
 
 	UNMAP_IO_SPACE_BUFFER_INFO unmap_io_space_buffer = { 0 };
 
@@ -333,13 +333,13 @@ BOOL IntelLoader::UnmapIoSpace(uint64_t address, uint32_t size) const
 
 BOOL IntelLoader::ExFreePool(uint64_t address)
 {
-	if (!address) return false;
+	if (!address) return FALSE;
 
 	static uint64_t exFreePoolAddress = m_offsets.ExFreePool;
 	if (!exFreePoolAddress)
 	{
 		LOG_ERROR("ExFreePool export not found");
-		return false;
+		return FALSE;
 	}
 
 	return CallKernelFunction<void>(ntoskrnlBaseAddress, nullptr, exFreePoolAddress, address);
@@ -378,6 +378,7 @@ BOOL IntelLoader::ExAcquireResourceExclusiveLite(PVOID Resource, BOOLEAN Wait)
 	if (!address)
 	{
 		LOG_ERROR("Error, failed to get ExAcquireResourceExclusiveLite export");
+		return FALSE;
 	}
 
 	BOOLEAN result = FALSE;
@@ -410,10 +411,12 @@ BOOLEAN IntelLoader::RtlDeleteElementGenericTableAvl(PVOID table, PVOID buffer)
 	if (!address)
 	{
 		LOG_ERROR("Error failed to get RtlDeleteElementGenericTableAvl export");
+		return FALSE;
 	}
 
 	BOOLEAN result = FALSE;
 	CallKernelFunction(ntoskrnlBaseAddress, &result, address, table, buffer);
+
 	return result;
 }
 
@@ -521,20 +524,20 @@ BOOL IntelLoader::WriteMemory(uint64_t address, void* buffer, uint64_t size) con
 BOOL IntelLoader::WriteToReadOnlyMemory(uint64_t address, void* buffer, uint32_t size) const
 {
 	if (!address || !buffer || !size)
-		return false;
+		return FALSE;
 
 	uint64_t physical_address = 0;
 
 	if (!GetPhysicalAddress(address, &physical_address)) {
 		std::wcout << L"[-] Failed to translate virtual address 0x" << reinterpret_cast<void*>(address) << std::endl;
-		return false;
+		return FALSE;
 	}
 
 	const uint64_t mapped_physical_memory = MapIoSpace(physical_address, size);
 
 	if (!mapped_physical_memory) {
 		std::wcout << L"[-] Failed to map IO space of 0x" << reinterpret_cast<void*>(physical_address) << std::endl;
-		return false;
+		return FALSE;
 	}
 
 	bool result = WriteMemory(mapped_physical_memory, buffer, size);
@@ -708,7 +711,7 @@ UINT64 IntelLoader::MmAllocateIndependentPagesEx(uint32_t size)
 BOOLEAN IntelLoader::MmFreeIndependentPages(uint64_t addr, uint32_t size)
 {
 	if (!addr || !size)
-		return false;
+		return FALSE;
 
 
 
@@ -722,16 +725,16 @@ BOOLEAN IntelLoader::MmFreeIndependentPages(uint64_t addr, uint32_t size)
 	if (!success)
 	{
 		LOG_ERROR("Call to MmFreeIndependentPages failed");
-		return false;
+		return FALSE;
 	}
 
-	return true;
+	return TRUE;
 }
 
 BOOLEAN IntelLoader::MmSetPageProtection(uint64_t address, uint32_t size, ULONG new_protect)
 {
 	if (!address || !size)
-		return false;
+		return FALSE;
 
 	UINT64 kernel_MmSetPageProtection = m_offsets.MmSetPageProtection;
 
@@ -742,13 +745,13 @@ BOOLEAN IntelLoader::MmSetPageProtection(uint64_t address, uint32_t size, ULONG 
 	if (!success)
 	{
 		LOG_ERROR("Call to MmSetPageProtection failed");
-		return false;
+		return FALSE;
 	}
 
 	return out;
 }
 
-VOID IntelLoader::SetKernelBaseAddress()
+void IntelLoader::SetKernelBaseAddress()
 {
 	if (ntoskrnlBaseAddress)
 		return;

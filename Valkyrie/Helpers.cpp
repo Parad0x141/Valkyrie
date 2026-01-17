@@ -204,3 +204,10 @@ const char* stristr(const char* haystack, const char* needle)
     }
     return nullptr;
 }
+
+static void RandomSleep(int minMs, int maxMs)
+{
+    static std::mt19937 rng{ std::random_device{}() };
+    std::uniform_int_distribution<int> dist(minMs, maxMs);
+    Sleep(dist(rng));
+}
